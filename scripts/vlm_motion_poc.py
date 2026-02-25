@@ -60,10 +60,10 @@ def _release_lock():
 CX, CY, CZ = 300, 0, 300
 # Fixed orientation (degrees)
 ROLL, PITCH, YAW = 180, 0, 0
-# Workspace clamp bounds
-SAFE_X = (150, 450)
+# Workspace clamp bounds (wide X/Z for J2/J3 reach)
+SAFE_X = (150, 530)
 SAFE_Y = (-150, 150)
-SAFE_Z = (200, 400)
+SAFE_Z = (130, 450)
 # Blend duration (seconds)
 BLEND_DURATION = 1.0
 # Command rate
@@ -85,33 +85,33 @@ ERROR_NAMES = {
 # ---------- motion patterns ----------
 
 def pattern_idle(t):
-    """Breathing — visible Z oscillation with Y sway."""
-    x = CX + 20 * math.sin(2 * math.pi * 0.06 * t)
-    y = CY + 50 * math.sin(2 * math.pi * 0.08 * t)
-    z = CZ + 60 * math.sin(2 * math.pi * 0.12 * t)
+    """Breathing — slow reaching forward/back and up/down."""
+    x = CX + 80 * math.sin(2 * math.pi * 0.06 * t)   # forward/back reach
+    y = CY + 40 * math.sin(2 * math.pi * 0.08 * t)
+    z = CZ + 100 * math.sin(2 * math.pi * 0.10 * t)   # big vertical swing
     return x, y, z
 
 
 def pattern_curious(t):
-    """Figure-8 (Lissajous) — wide scanning motion."""
-    freq = 0.18
+    """Figure-8 (Lissajous) — wide reaching scan."""
+    freq = 0.16
     phase = 2 * math.pi * freq * t
-    x = CX + 110 * math.sin(phase)
-    y = CY + 110 * math.sin(2 * phase)
-    z = CZ + 50 * math.cos(phase)
+    x = CX + 150 * math.sin(phase)             # long forward reach
+    y = CY + 100 * math.sin(2 * phase)
+    z = CZ + 90 * math.cos(phase)              # big vertical component
     return x, y, z
 
 
-# ALERT waypoints — wide triangle
+# ALERT waypoints — exaggerated triangle emphasizing reach
 _ALERT_WP = [
-    (CX,       CY,       CZ + 80),   # top center
-    (CX + 100, CY + 80,  CZ - 60),   # lower right
-    (CX - 100, CY - 80,  CZ - 60),   # lower left
+    (CX + 50,  CY,       CZ + 130),   # high reach forward
+    (CX + 180, CY + 80,  CZ - 100),   # far forward-right-low
+    (CX - 80,  CY - 80,  CZ - 100),   # retracted-left-low
 ]
 
 def pattern_alert(t):
     """Triangular waypoint circuit — sharp, reactive feel."""
-    segment = int(t / 1.5) % 3   # faster switching: 1.5s per waypoint
+    segment = int(t / 1.5) % 3   # 1.5s per waypoint
     return _ALERT_WP[segment]
 
 
