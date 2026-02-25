@@ -1,14 +1,15 @@
 """
-VLM Motion Switcher PoC — 3 hardcoded motion patterns with state switching.
+VLM Motion Switcher PoC — 4 hardcoded motion patterns with state switching.
 
-Demonstrates the control flow: VLM state command → smooth transition →
-procedural arm motion. Three patterns:
+Demonstrates the control flow: VLM state command -> smooth transition ->
+procedural arm motion. Four patterns:
   0 = IDLE    — slow breathing (up/down float)
-  1 = CURIOUS — compact figure-8 scanning
-  2 = ALERT   — triangular waypoint circuit
+  1 = CURIOUS — figure-8 scanning
+  2 = ALERT   — fast triangular waypoint circuit
+  3 = DANCE   — erratic high-frequency shaking
 
 Usage:
-    python vlm_motion_poc.py [--ip 127.0.0.1] [--speed 60] [--mode auto|keyboard] [--dwell 8]
+    python vlm_motion_poc.py [--ip 127.0.0.1] [--speed 150] [--mode auto|keyboard] [--dwell 8]
 """
 
 import argparse
@@ -32,16 +33,15 @@ def acquire_lock():
         try:
             with open(LOCK_FILE, "r") as f:
                 old_pid = int(f.read().strip())
-            # Check if that process is still alive
             try:
-                os.kill(old_pid, 0)  # signal 0 = existence check
+                os.kill(old_pid, 0)
                 print(f"[ERROR] Another instance is already running (PID {old_pid}).")
                 print(f"  If this is wrong, delete: {LOCK_FILE}")
                 sys.exit(1)
             except OSError:
-                pass  # process is dead, stale lock file
+                pass
         except (ValueError, IOError):
-            pass  # corrupt lock file, overwrite it
+            pass
 
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
@@ -56,20 +56,20 @@ def _release_lock():
 
 # ---------- constants ----------
 
-# Safe center position (mm)
-CX, CY, CZ = 300, 0, 300
-# Fixed orientation (degrees)
+# Safe center position (mm) — raised high to keep joints mid-range
+CX, CY, CZ = 300, 0, 350
+# Fixed orientation (degrees) — NEVER changed, avoids IK dead zones
 ROLL, PITCH, YAW = 180, 0, 0
-# Workspace clamp bounds (wide X/Z for J2/J3 reach)
-SAFE_X = (150, 530)
-SAFE_Y = (-150, 150)
-SAFE_Z = (130, 450)
+# Workspace clamp bounds
+SAFE_X = (220, 420)
+SAFE_Y = (-80, 80)
+SAFE_Z = (290, 420)
 # Blend duration (seconds)
-BLEND_DURATION = 1.0
+BLEND_DURATION = 0.5
 # Command rate
 DT = 0.04  # ~25 Hz
 
-STATE_NAMES = {0: "IDLE", 1: "CURIOUS", 2: "ALERT"}
+STATE_NAMES = {0: "IDLE", 1: "CURIOUS", 2: "ALERT", 3: "DANCE"}
 
 # Error code lookup (subset)
 ERROR_NAMES = {
@@ -82,40 +82,54 @@ ERROR_NAMES = {
 }
 
 
-# ---------- motion patterns ----------
+# ---------- motion patterns (return x, y, z only — RPY always fixed) ----------
 
 def pattern_idle(t):
-    """Breathing — slow reaching forward/back and up/down."""
-    x = CX + 80 * math.sin(2 * math.pi * 0.06 * t)   # forward/back reach
-    y = CY + 40 * math.sin(2 * math.pi * 0.08 * t)
-    z = CZ + 100 * math.sin(2 * math.pi * 0.10 * t)   # big vertical swing
+    """Breathing — visible forward/back and up/down reach."""
+    x = CX + 50 * math.sin(2 * math.pi * 0.06 * t)
+    y = CY + 30 * math.sin(2 * math.pi * 0.08 * t)
+    z = CZ + 50 * math.sin(2 * math.pi * 0.10 * t)
     return x, y, z
 
 
 def pattern_curious(t):
-    """Figure-8 (Lissajous) — wide reaching scan."""
+    """Figure-8 (Lissajous) — wide scan."""
     freq = 0.16
     phase = 2 * math.pi * freq * t
-    x = CX + 150 * math.sin(phase)             # long forward reach
-    y = CY + 100 * math.sin(2 * phase)
-    z = CZ + 90 * math.cos(phase)              # big vertical component
+    x = CX + 80 * math.sin(phase)
+    y = CY + 60 * math.sin(2 * phase)
+    z = CZ + 50 * math.cos(phase)
     return x, y, z
 
 
-# ALERT waypoints — exaggerated triangle emphasizing reach
+# ALERT waypoints — forward-biased triangle
 _ALERT_WP = [
-    (CX + 50,  CY,       CZ + 130),   # high reach forward
-    (CX + 180, CY + 80,  CZ - 100),   # far forward-right-low
-    (CX - 80,  CY - 80,  CZ - 100),   # retracted-left-low
+    (CX + 20,  CY,       CZ + 50),   # high center
+    (CX + 80,  CY + 50,  CZ - 30),   # forward-right
+    (CX + 80,  CY - 50,  CZ - 30),   # forward-left
 ]
 
 def pattern_alert(t):
-    """Triangular waypoint circuit — sharp, reactive feel."""
-    segment = int(t / 1.5) % 3   # 1.5s per waypoint
+    """Triangular waypoint circuit — fast and aggressive."""
+    segment = int(t / 0.8) % 3
     return _ALERT_WP[segment]
 
 
-PATTERNS = [pattern_idle, pattern_curious, pattern_alert]
+def pattern_dance(t):
+    """Wild dance — high-frequency overlapping oscillations for erratic shaking."""
+    x = CX + (30 * math.sin(2 * math.pi * 0.5 * t)
+              + 20 * math.sin(2 * math.pi * 1.3 * t)
+              + 10 * math.sin(2 * math.pi * 2.7 * t))
+    y = CY + (25 * math.sin(2 * math.pi * 0.7 * t)
+              + 15 * math.sin(2 * math.pi * 1.9 * t)
+              + 8  * math.sin(2 * math.pi * 3.1 * t))
+    z = CZ + 20 + (20 * math.sin(2 * math.pi * 0.4 * t)
+                    + 15 * math.sin(2 * math.pi * 1.1 * t)
+                    + 10 * math.sin(2 * math.pi * 2.3 * t))
+    return x, y, z
+
+
+PATTERNS = [pattern_idle, pattern_curious, pattern_alert, pattern_dance]
 
 
 # ---------- workspace safety ----------
@@ -130,60 +144,52 @@ def clamp_position(x, y, z):
 # ---------- motion dispatcher ----------
 
 class MotionDispatcher:
-    """Manages current pattern and smooth blending between patterns."""
+    """Manages current pattern and smooth XYZ blending between patterns."""
 
-    def __init__(self, get_arm_position):
-        self.current_state = 0  # start with IDLE
-        self._get_arm_pos = get_arm_position
-        self._blend_alpha = 1.0  # 1.0 = fully settled
-        self._blend_start_pos = None
+    def __init__(self, get_arm_xyz):
+        self.current_state = 0
+        self._get_arm_xyz = get_arm_xyz
+        self._blend_alpha = 1.0
+        self._blend_start_xyz = None
         self._blend_start_time = None
         self._lock = threading.Lock()
 
     def request_state(self, state_id, t):
-        """Switch to a new state with smooth blending."""
         with self._lock:
             if state_id == self.current_state:
                 return
             if state_id not in STATE_NAMES:
                 return
-            # Capture actual arm position as blend start
-            self._blend_start_pos = self._get_arm_pos()
+            self._blend_start_xyz = self._get_arm_xyz()
             self._blend_start_time = t
             self._blend_alpha = 0.0
             self.current_state = state_id
-            print(f"  >> Switching to {STATE_NAMES[state_id]}"  # no unicode
-                  f"  (blend from {self._fmt(self._blend_start_pos)})")
+            sp = self._blend_start_xyz
+            print(f"  >> Switching to {STATE_NAMES[state_id]}"
+                  f"  (blend from X={sp[0]:.0f} Y={sp[1]:.0f} Z={sp[2]:.0f})")
 
     def get_target(self, t):
-        """Return blended (x, y, z) for the current moment."""
-        new_target = PATTERNS[self.current_state](t)
+        """Return blended (x, y, z). RPY is always fixed."""
+        new_xyz = PATTERNS[self.current_state](t)
 
         with self._lock:
             if self._blend_alpha >= 1.0:
-                return new_target
+                return new_xyz
 
             elapsed = t - self._blend_start_time
             raw = min(1.0, elapsed / BLEND_DURATION)
-            # Smoothstep easing: 3t^2 - 2t^3
             a = raw * raw * (3 - 2 * raw)
             self._blend_alpha = a
 
-            sp = self._blend_start_pos
-            x = sp[0] + a * (new_target[0] - sp[0])
-            y = sp[1] + a * (new_target[1] - sp[1])
-            z = sp[2] + a * (new_target[2] - sp[2])
+            sp = self._blend_start_xyz
+            x = sp[0] + a * (new_xyz[0] - sp[0])
+            y = sp[1] + a * (new_xyz[1] - sp[1])
+            z = sp[2] + a * (new_xyz[2] - sp[2])
 
             if raw >= 1.0:
                 self._blend_alpha = 1.0
 
             return x, y, z
-
-    @staticmethod
-    def _fmt(pos):
-        if pos is None:
-            return "unknown"
-        return f"X={pos[0]:.0f} Y={pos[1]:.0f} Z={pos[2]:.0f}"
 
 
 # ---------- VLM interface ----------
@@ -195,7 +201,6 @@ class VLMInterface:
         self._queue = queue.Queue(maxsize=1)
 
     def push_state(self, state_id):
-        # Drain old value if present, then push new
         try:
             self._queue.get_nowait()
         except queue.Empty:
@@ -209,7 +214,7 @@ class VLMInterface:
             return None
 
 
-# ---------- arm controller (from loop_motion.py) ----------
+# ---------- arm controller ----------
 
 class ArmController:
     def __init__(self, ip, speed, collision_sensitivity):
@@ -253,15 +258,15 @@ class ArmController:
         print(f"Connected to {self.ip}, speed={self.speed} mm/s")
         self._print_position()
 
-    def get_position(self):
-        """Return current (x, y, z) or fallback to center."""
+    def get_xyz(self):
+        """Return current (x, y, z) only — RPY always fixed at constants."""
         code, pos = self.arm.get_position()
         if code == 0:
             return (pos[0], pos[1], pos[2])
         return (CX, CY, CZ)
 
     def _print_position(self):
-        pos = self.get_position()
+        pos = self.get_xyz()
         print(f"  Current pos: X={pos[0]:.1f} Y={pos[1]:.1f} Z={pos[2]:.1f}")
 
     def _on_error_warn(self, data):
@@ -269,7 +274,7 @@ class ArmController:
         warn = data["warn_code"]
         if err != 0:
             name = ERROR_NAMES.get(err, f"Unknown({err})")
-            print(f"\n[ERROR] code={err} ({name}) — auto-recovering...")
+            print(f"\n[ERROR] code={err} ({name}) -- auto-recovering...")
             self._recover()
         if warn != 0:
             self.arm.clean_warn()
@@ -291,16 +296,12 @@ class ArmController:
             self.arm.set_mode(0)
             self.arm.set_state(0)
             time.sleep(0.2)
-            code, state = self.arm.get_state()
-            if state in (0, 1):
-                print(f"[RECOVER] OK (total: {self.error_count})")
-            else:
-                print(f"[RECOVER] state={state}, retrying...")
-                time.sleep(1)
-                self.arm.clean_error()
-                self.arm.motion_enable(enable=True)
-                self.arm.set_mode(0)
-                self.arm.set_state(0)
+            # Move to center with fixed RPY — safe from any position
+            self.arm.set_position(CX, CY, CZ, ROLL, PITCH, YAW,
+                                  speed=60, wait=True)
+            print(f"[RECOVER] OK -> center (total: {self.error_count})")
+        except Exception as e:
+            print(f"[RECOVER] partial ({e}), total: {self.error_count}")
         finally:
             self.recovering.release()
 
@@ -316,7 +317,7 @@ class ArmController:
 
 def auto_driver(vlm, dwell, running_flag):
     """Cycle through states automatically."""
-    cycle = [0, 1, 2]
+    cycle = [0, 1, 2, 3]
     idx = 0
     while running_flag():
         state = cycle[idx % len(cycle)]
@@ -331,7 +332,7 @@ def auto_driver(vlm, dwell, running_flag):
 
 def keyboard_driver(vlm, running_flag):
     """Read stdin for state switches."""
-    print("\nControls: [0]=IDLE  [1]=CURIOUS  [2]=ALERT  [q]=quit")
+    print("\nControls: [0]=IDLE  [1]=CURIOUS  [2]=ALERT  [3]=DANCE  [q]=quit")
     while running_flag():
         try:
             line = input("> ").strip()
@@ -339,12 +340,12 @@ def keyboard_driver(vlm, running_flag):
             break
         if line == "q":
             break
-        if line in ("0", "1", "2"):
+        if line in ("0", "1", "2", "3"):
             state = int(line)
             print(f"[VLM-key] -> {STATE_NAMES[state]}")
             vlm.push_state(state)
         else:
-            print("  (type 0, 1, 2, or q)")
+            print("  (type 0, 1, 2, 3, or q)")
 
 
 # ---------- main ----------
@@ -364,7 +365,7 @@ def main():
 
     ctrl = ArmController(args.ip, args.speed, args.sensitivity)
     vlm = VLMInterface()
-    dispatcher = MotionDispatcher(ctrl.get_position)
+    dispatcher = MotionDispatcher(ctrl.get_xyz)
 
     try:
         ctrl.connect()
@@ -392,7 +393,7 @@ def main():
 
         # Main control loop @ 25 Hz
         t = 0.0
-        log_interval = 2.0  # print position every 2s
+        log_interval = 2.0
         last_log = 0.0
 
         while ctrl.running:
@@ -406,16 +407,17 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # 3. Get blended target
+            # 3. Get blended XYZ target
             x, y, z = dispatcher.get_target(t)
 
             # 4. Safety clamp
             x, y, z = clamp_position(x, y, z)
 
-            # 5. Send command
+            # 5. Send command (DANCE gets double speed for frantic feel)
+            spd = args.speed * 2 if dispatcher.current_state == 3 else args.speed
             ret = ctrl.arm.set_position(
                 x, y, z, ROLL, PITCH, YAW,
-                speed=args.speed, wait=False)
+                speed=spd, wait=False)
             if ret == -2:
                 time.sleep(0.2)
                 continue
