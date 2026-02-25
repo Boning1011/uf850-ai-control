@@ -12,12 +12,47 @@ Usage:
 """
 
 import argparse
+import atexit
 import math
+import os
 import queue
 import sys
 import time
 import threading
 from xarm.wrapper import XArmAPI
+
+# ---------- single-instance lock ----------
+
+LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".vlm_motion.lock")
+
+
+def acquire_lock():
+    """Ensure only one instance runs at a time (file-based lock with PID check)."""
+    if os.path.exists(LOCK_FILE):
+        try:
+            with open(LOCK_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            # Check if that process is still alive
+            try:
+                os.kill(old_pid, 0)  # signal 0 = existence check
+                print(f"[ERROR] Another instance is already running (PID {old_pid}).")
+                print(f"  If this is wrong, delete: {LOCK_FILE}")
+                sys.exit(1)
+            except OSError:
+                pass  # process is dead, stale lock file
+        except (ValueError, IOError):
+            pass  # corrupt lock file, overwrite it
+
+    with open(LOCK_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    atexit.register(_release_lock)
+
+
+def _release_lock():
+    try:
+        os.remove(LOCK_FILE)
+    except OSError:
+        pass
 
 # ---------- constants ----------
 
@@ -26,11 +61,11 @@ CX, CY, CZ = 300, 0, 300
 # Fixed orientation (degrees)
 ROLL, PITCH, YAW = 180, 0, 0
 # Workspace clamp bounds
-SAFE_X = (180, 420)
-SAFE_Y = (-120, 120)
-SAFE_Z = (240, 360)
+SAFE_X = (150, 450)
+SAFE_Y = (-150, 150)
+SAFE_Z = (200, 400)
 # Blend duration (seconds)
-BLEND_DURATION = 1.5
+BLEND_DURATION = 1.0
 # Command rate
 DT = 0.04  # ~25 Hz
 
@@ -50,33 +85,33 @@ ERROR_NAMES = {
 # ---------- motion patterns ----------
 
 def pattern_idle(t):
-    """Slow breathing — gentle Z oscillation with subtle Y sway."""
-    x = CX
-    y = CY + 15 * math.sin(2 * math.pi * 0.05 * t)
-    z = CZ + 25 * math.sin(2 * math.pi * 0.08 * t)
+    """Breathing — visible Z oscillation with Y sway."""
+    x = CX + 20 * math.sin(2 * math.pi * 0.06 * t)
+    y = CY + 50 * math.sin(2 * math.pi * 0.08 * t)
+    z = CZ + 60 * math.sin(2 * math.pi * 0.12 * t)
     return x, y, z
 
 
 def pattern_curious(t):
-    """Compact figure-8 (Lissajous) — scanning / investigative."""
-    freq = 0.10
+    """Figure-8 (Lissajous) — wide scanning motion."""
+    freq = 0.18
     phase = 2 * math.pi * freq * t
-    x = CX + 60 * math.sin(phase)
-    y = CY + 60 * math.sin(2 * phase)
-    z = CZ + 25 * math.cos(phase)
+    x = CX + 110 * math.sin(phase)
+    y = CY + 110 * math.sin(2 * phase)
+    z = CZ + 50 * math.cos(phase)
     return x, y, z
 
 
-# ALERT waypoints — triangle within safe workspace
+# ALERT waypoints — wide triangle
 _ALERT_WP = [
-    (CX,      CY,      CZ + 40),   # top center
-    (CX + 50, CY + 45, CZ - 30),   # lower right
-    (CX - 50, CY + 45, CZ - 30),   # lower left
+    (CX,       CY,       CZ + 80),   # top center
+    (CX + 100, CY + 80,  CZ - 60),   # lower right
+    (CX - 100, CY - 80,  CZ - 60),   # lower left
 ]
 
 def pattern_alert(t):
     """Triangular waypoint circuit — sharp, reactive feel."""
-    segment = int(t / 3.0) % 3
+    segment = int(t / 1.5) % 3   # faster switching: 1.5s per waypoint
     return _ALERT_WP[segment]
 
 
@@ -317,13 +352,15 @@ def keyboard_driver(vlm, running_flag):
 def main():
     parser = argparse.ArgumentParser(description="VLM Motion Switcher PoC")
     parser.add_argument("--ip", default="127.0.0.1")
-    parser.add_argument("--speed", type=int, default=60)
+    parser.add_argument("--speed", type=int, default=150)
     parser.add_argument("--sensitivity", type=int, default=-1, choices=range(-1, 6),
                         help="Collision sensitivity 0-5, -1=skip (default: -1)")
     parser.add_argument("--mode", choices=["auto", "keyboard"], default="auto")
     parser.add_argument("--dwell", type=float, default=8.0,
                         help="Seconds per state in auto mode (default: 8)")
     args = parser.parse_args()
+
+    acquire_lock()
 
     ctrl = ArmController(args.ip, args.speed, args.sensitivity)
     vlm = VLMInterface()
