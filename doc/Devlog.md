@@ -4,6 +4,26 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-02-25 — 连续运动 + 自动错误恢复机制验证
+
+**验证结果：**
+- 3D Lissajous figure-8 轨迹在模拟器上连续运行，无需人工干预
+- SDK 回调机制 (`register_error_warn_changed_callback`) 可实时捕获错误
+- 自动恢复 4 步序列可行：`clean_error()` → `motion_enable(True)` → `set_mode(0)` → `set_state(0)`
+
+**关键发现：错误处理不需要点 Web UI 弹窗**
+- 所有错误（碰撞、超速、超限等）都可以通过 SDK 的 `clean_error` + 重新使能来自动恢复
+- Web UI 弹窗只是前端行为，SDK 层面完全可以绕过
+- 错误码 31（碰撞异常电流）是最常见的碰撞检测码
+
+**踩坑：**
+- `set_collision_sensitivity()` 在 Docker 模拟器上会永久阻塞 — 模拟器固件不支持该命令，需要超时跳过
+- `arm.state` 初始化就是 4（停止态），每次连接后都需要执行完整的使能序列
+
+**脚本：** `scripts/loop_motion.py` — 可用 `--sensitivity` 参数控制碰撞灵敏度（真机用）
+
+---
+
 ## 2026-02-25 — MVP: Python SDK → Docker Simulator 通路验证通过
 
 **验证结果：**
