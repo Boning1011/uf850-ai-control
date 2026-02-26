@@ -60,10 +60,14 @@ def _release_lock():
 CX, CY, CZ = 300, 0, 350
 # Fixed orientation (degrees) — NEVER changed, avoids IK dead zones
 ROLL, PITCH, YAW = 180, 0, 0
-# Workspace clamp bounds
+# Workspace clamp bounds (default — IDLE / CURIOUS / ALERT)
 SAFE_X = (220, 420)
 SAFE_Y = (-80, 80)
 SAFE_Z = (290, 420)
+# DANCE workspace — arm raised high, much wider range
+DANCE_X = (100, 450)
+DANCE_Y = (-150, 150)
+DANCE_Z = (280, 950)
 # Blend duration (seconds)
 BLEND_DURATION = 0.5
 # Command rate
@@ -116,16 +120,18 @@ def pattern_alert(t):
 
 
 def pattern_dance(t):
-    """Wild dance — high-frequency overlapping oscillations for erratic shaking."""
-    x = CX + (30 * math.sin(2 * math.pi * 0.5 * t)
-              + 20 * math.sin(2 * math.pi * 1.3 * t)
-              + 10 * math.sin(2 * math.pi * 2.7 * t))
-    y = CY + (25 * math.sin(2 * math.pi * 0.7 * t)
-              + 15 * math.sin(2 * math.pi * 1.9 * t)
-              + 8  * math.sin(2 * math.pi * 3.1 * t))
-    z = CZ + 20 + (20 * math.sin(2 * math.pi * 0.4 * t)
-                    + 15 * math.sin(2 * math.pi * 1.1 * t)
-                    + 10 * math.sin(2 * math.pi * 2.3 * t))
+    """Wild dance — arm raised high, large fast overlapping oscillations."""
+    # Raised center — arm reaches up into the air
+    dcx, dcy, dcz = 200, 0, 650
+    x = dcx + (80 * math.sin(2 * math.pi * 1.0 * t)
+               + 50 * math.sin(2 * math.pi * 2.6 * t)
+               + 20 * math.sin(2 * math.pi * 4.5 * t))
+    y = dcy + (60 * math.sin(2 * math.pi * 1.3 * t)
+               + 35 * math.sin(2 * math.pi * 3.1 * t)
+               + 15 * math.sin(2 * math.pi * 5.3 * t))
+    z = dcz + (140 * math.sin(2 * math.pi * 0.7 * t)
+               + 70 * math.sin(2 * math.pi * 1.9 * t)
+               + 30 * math.sin(2 * math.pi * 3.7 * t))
     return x, y, z
 
 
@@ -134,10 +140,14 @@ PATTERNS = [pattern_idle, pattern_curious, pattern_alert, pattern_dance]
 
 # ---------- workspace safety ----------
 
-def clamp_position(x, y, z):
-    x = max(SAFE_X[0], min(SAFE_X[1], x))
-    y = max(SAFE_Y[0], min(SAFE_Y[1], y))
-    z = max(SAFE_Z[0], min(SAFE_Z[1], z))
+def clamp_position(x, y, z, state=0):
+    if state == 3:  # DANCE — wider bounds
+        bx, by, bz = DANCE_X, DANCE_Y, DANCE_Z
+    else:
+        bx, by, bz = SAFE_X, SAFE_Y, SAFE_Z
+    x = max(bx[0], min(bx[1], x))
+    y = max(by[0], min(by[1], y))
+    z = max(bz[0], min(bz[1], z))
     return x, y, z
 
 
@@ -410,11 +420,11 @@ def main():
             # 3. Get blended XYZ target
             x, y, z = dispatcher.get_target(t)
 
-            # 4. Safety clamp
-            x, y, z = clamp_position(x, y, z)
+            # 4. Safety clamp (DANCE uses wider bounds)
+            x, y, z = clamp_position(x, y, z, state=dispatcher.current_state)
 
-            # 5. Send command (DANCE gets double speed for frantic feel)
-            spd = args.speed * 2 if dispatcher.current_state == 3 else args.speed
+            # 5. Send command (DANCE gets 3x speed for frantic feel)
+            spd = args.speed * 3 if dispatcher.current_state == 3 else args.speed
             ret = ctrl.arm.set_position(
                 x, y, z, ROLL, PITCH, YAW,
                 speed=spd, wait=False)
