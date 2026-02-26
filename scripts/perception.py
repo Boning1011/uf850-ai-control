@@ -121,7 +121,11 @@ class FrameBuffer:
 # ---------- camera capture thread ----------
 
 class CameraThread:
-    """Captures frames from a camera at a target fps and pushes JPEG bytes into a FrameBuffer."""
+    """Captures frames from a camera at a target fps and pushes JPEG bytes into a FrameBuffer.
+
+    IMPORTANT: On Windows, cv2.VideoCapture() must be called from the main thread.
+    Use open_camera() before start().
+    """
 
     def __init__(self, device: int, resolution: tuple, jpeg_quality: int,
                  frame_buffer: FrameBuffer, target_fps: float = 5.0):
@@ -132,25 +136,38 @@ class CameraThread:
         self.target_fps = target_fps
         self.running = True
         self._thread = None
+        self._cap = None
+
+    def open_camera(self):
+        """Open camera on main thread (Windows requires this). Call before start()."""
+        print(f"[Camera] Opening device {self.device}...", flush=True)
+        self._cap = cv2.VideoCapture(self.device)
+        if not self._cap.isOpened():
+            print(f"[Camera] Failed to open device {self.device}", flush=True)
+            return False
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(f"[Camera] Opened device {self.device} at {w}x{h}", flush=True)
+        return True
 
     def start(self):
+        if self._cap is None:
+            if not self.open_camera():
+                return
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def stop(self):
         self.running = False
+        if self._cap:
+            self._cap.release()
+            print("[Camera] Released.", flush=True)
 
     def _run(self):
-        cap = cv2.VideoCapture(self.device)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-
-        if not cap.isOpened():
-            print(f"[Camera] Failed to open device {self.device}")
-            return
-
-        print(f"[Camera] Opened device {self.device} at {self.resolution[0]}x{self.resolution[1]}")
         interval = 1.0 / self.target_fps
+        cap = self._cap
 
         while self.running:
             ret, frame = cap.read()
@@ -162,9 +179,6 @@ class CameraThread:
                                    [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             self.frame_buffer.push(jpeg.tobytes())
             time.sleep(interval)
-
-        cap.release()
-        print("[Camera] Released.")
 
 
 # ---------- perception thread ----------
@@ -195,15 +209,21 @@ class PerceptionThread:
 
     def _run(self):
         interval = 1.0 / self.rate_hz
-        print(f"[VLM] Perception loop started ({self.rate_hz} Hz, {self.frame_count} frames/call)")
+        print(f"[VLM] Perception loop started ({self.rate_hz} Hz, {self.frame_count} frames/call)", flush=True)
 
+        _wait_logged = False
         while self.running:
             frames = self.frame_buffer.get_latest(self.frame_count)
-            if not frames:
+            if not frames or len(frames) < self.frame_count:
+                if not _wait_logged:
+                    print(f"[VLM] Waiting for frames ({len(frames) if frames else 0}/{self.frame_count})...", flush=True)
+                    _wait_logged = True
                 time.sleep(0.5)
                 continue
+            _wait_logged = False
 
             try:
+                print(f"[VLM] Calling provider with {len(frames)} frames...", flush=True)
                 t0 = time.time()
                 result = self.provider.perceive(frames, self.system_prompt)
                 latency = time.time() - t0
@@ -222,10 +242,10 @@ class PerceptionThread:
 
                 print(f"[VLM] #{self.call_count} ({latency:.1f}s) "
                       f"e={state.energy:.2f} ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
-                      f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}")
+                      f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}", flush=True)
 
             except Exception as e:
                 self.error_count += 1
-                print(f"[VLM] Error #{self.error_count}: {e}")
+                print(f"[VLM] Error #{self.error_count}: {e}", flush=True)
 
             time.sleep(interval)
