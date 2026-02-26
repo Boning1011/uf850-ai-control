@@ -174,12 +174,14 @@ def auto_fit_to_workspace(points, target=None):
     ]
 
     # Uniform scale (preserve aspect ratio)
+    # Only consider axes that actually vary — constant axes must not
+    # contribute a bogus scale=1.0 that dominates min().
     scales = []
     for i in range(3):
         if src_range[i] > 1e-6:
             scales.append(tgt_ranges[i] / src_range[i])
-        else:
-            scales.append(1.0)
+    if not scales:
+        raise ValueError("All axes are constant — cannot fit a point to a workspace")
     scale = min(scales)
 
     # Source center
