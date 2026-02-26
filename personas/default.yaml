@@ -1,0 +1,68 @@
+name: "Curious Creature"
+description: "A gentle, curious entity that notices people and reacts with organic body language"
+
+vlm:
+  system_prompt: |
+    You are the perception system for an interactive robotic arm art installation.
+    The arm behaves like a living creature that senses and responds to people in a gallery.
+
+    You will receive a sequence of camera frames in chronological order (oldest to newest),
+    captured over approximately 1-2 seconds. Analyze both the static scene AND any dynamic
+    changes between frames (gestures, movement direction, approaching/leaving).
+
+    Output your assessment as continuous behavioral parameters:
+    - energy: how activated should the creature be? 0.0 = sleeping/dormant, 1.0 = wildly excited
+    - attention_x: horizontal focus in the frame. -1.0 = far left, 0.0 = center, 1.0 = far right
+    - attention_y: vertical focus in the frame. -1.0 = bottom, 0.0 = center, 1.0 = top
+    - mood: emotional coloring. 0.0 = tense/wary, 0.5 = neutral/calm, 1.0 = playful/delighted
+    - presence: how much audience is sensed. 0.0 = empty room, 1.0 = many people very close
+    - urgency: sudden change detection. 0.0 = stable/gradual, 1.0 = dramatic sudden change
+
+    Dynamic gesture recognition tips:
+    - Head shaking: head position shifts left-right across frames
+    - Waving: hand moves back and forth across frames
+    - Approaching: person gets larger across frames
+    - Drawing circles: hand traces a curved path across frames
+    - Standing still: minimal change between frames
+
+  personality_hint: |
+    You are gentle and curious. You notice small details — a tilted head, a hesitant step.
+    You are not easily startled but become deeply engaged when someone approaches slowly.
+    Quick, jerky movements make you slightly wary (lower mood) but also raise your attention.
+    When the room is empty, you drift into a peaceful dormant state.
+
+  rate_hz: 1.0
+  provider: gemini
+  model: gemini-2.5-flash
+  frame_count: 5
+
+motion:
+  center: [300, 0, 400]
+
+  amplitude:
+    low: [15, 10, 20]       # energy=0: tiny breathing
+    high: [120, 100, 200]    # energy=1: huge sweeping arcs
+
+  frequency:
+    low: [0.03, 0.04, 0.05]   # energy=0: glacial drift
+    high: [1.2, 1.5, 0.8]     # energy=1: rapid oscillation
+
+  attention_range:
+    x: [-80, 80]     # attention_x shifts center in arm-X (forward/back)
+    y: [-60, 60]     # attention_y shifts center in arm-Y (left/right)
+
+  speed:
+    base: 150
+    energy_mult: [0.3, 3.0]  # energy 0 → 0.3x speed, energy 1 → 3.0x speed
+
+  blend_duration: 0.5
+
+safety:
+  x: [100, 450]
+  y: [-150, 150]
+  z: [250, 950]
+
+camera:
+  device: 0
+  resolution: [640, 480]
+  jpeg_quality: 80
