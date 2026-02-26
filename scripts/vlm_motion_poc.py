@@ -317,6 +317,12 @@ class ArmController:
         finally:
             self.recovering.release()
 
+    def flush_queue(self):
+        """Clear command buffer so new pattern takes effect immediately."""
+        self.arm.set_state(4)   # stop → clears command queue
+        self.arm.set_mode(0)    # re-enter position mode
+        self.arm.set_state(0)   # resume
+
     def disconnect(self):
         self.running = False
         if self.arm:
@@ -413,6 +419,7 @@ def main():
             new_state = vlm.pop_state()
             if new_state is not None:
                 dispatcher.request_state(new_state, t)
+                ctrl.flush_queue()  # clear old commands → instant switch
 
             # 2. Skip if arm in error
             if ctrl.arm.has_error or ctrl.arm.state >= 4:
