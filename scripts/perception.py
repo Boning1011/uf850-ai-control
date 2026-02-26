@@ -211,19 +211,13 @@ class PerceptionThread:
         interval = 1.0 / self.rate_hz
         print(f"[VLM] Perception loop started ({self.rate_hz} Hz, {self.frame_count} frames/call)", flush=True)
 
-        _wait_logged = False
         while self.running:
             frames = self.frame_buffer.get_latest(self.frame_count)
             if not frames or len(frames) < self.frame_count:
-                if not _wait_logged:
-                    print(f"[VLM] Waiting for frames ({len(frames) if frames else 0}/{self.frame_count})...", flush=True)
-                    _wait_logged = True
                 time.sleep(0.5)
                 continue
-            _wait_logged = False
 
             try:
-                print(f"[VLM] Calling provider with {len(frames)} frames...", flush=True)
                 t0 = time.time()
                 result = self.provider.perceive(frames, self.system_prompt)
                 latency = time.time() - t0

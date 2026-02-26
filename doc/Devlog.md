@@ -4,6 +4,42 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-02-26 — Layer 1: AI Perception Pipeline (Gemini 2.5 Flash) 跑通
+
+**验证结果：**
+- 完整 pipeline：Webcam (5fps) → 5帧批量 → Gemini 2.5 Flash (structured JSON) → 6个连续参数 → 参数化运动生成 → 机械臂
+- Gemini 返回结构化 JSON（Pydantic schema 强制），6个 float 全部在有效范围内
+- 单次 VLM 调用延迟 ~5 秒，1Hz 更新频率下约每 6 秒更新一次感知状态
+- 指数移动平均（EMA）平滑避免参数跳变
+
+**架构决策：**
+- **不用 Gemini Live API** — 标准 `generateContent` API 更简单、更便宜（$0.30/M tokens）、原生 JSON schema、无需 WebSocket 管理
+- **多帧传入**（5帧/次）让 VLM 能看到时序变化，识别动态手势（摇头、招手等），单帧只能识别静态姿势
+- **Persona YAML** 定义交互人格 — system prompt + motion params + safety bounds，换文件 = 换性格，零代码改动
+- **6个连续参数**（energy/attention_x/attention_y/mood/presence/urgency）驱动所有运动变化，替代之前的 4 个离散状态
+- **Provider 抽象** — `VLMProvider` ABC，当前用 Gemini，可随时换 Claude/GPT
+
+**踩坑：**
+- Windows 上 `cv2.VideoCapture()` 在后台线程会永久阻塞 — 必须在主线程打开摄像头，然后传给后台线程
+- `print()` 在 Windows 多线程中需要 `flush=True` 否则输出延迟
+
+**新文件：**
+- `scripts/arm_controller.py` — 从 vlm_motion_poc.py 提取的可复用 ArmController
+- `scripts/perception.py` — VLM provider 抽象 + Gemini 实现 + 摄像头线程 + 感知线程
+- `scripts/motion_gen.py` — 参数化运动生成器（连续参数 → 正弦波 XYZ）
+- `scripts/persona.py` — PerceptionState 数据类 + StateHolder + YAML 加载器
+- `scripts/main.py` — 完整 pipeline 入口
+- `personas/default.yaml` — "Curious Creature" 默认人格
+
+**运行方式：**
+- `python scripts/main.py --ip 127.0.0.1` — 完整 pipeline（摄像头 + VLM + 机械臂）
+- `python scripts/main.py --keyboard` — 键盘手动控制参数
+- `python scripts/main.py --no-camera` — 模拟摄像头 + VLM
+- `python scripts/test_perception_static.py` — 静态图/摄像头快照测试 VLM
+- `python scripts/test_perception_live.py` — 连续感知循环测试（无机械臂）
+
+---
+
 ## 2026-02-26 — Houdini ↔ 机械臂坐标映射验证通过
 
 **验证结果：**
