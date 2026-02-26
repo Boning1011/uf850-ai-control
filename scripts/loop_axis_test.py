@@ -1,42 +1,29 @@
 """
 Loop through Houdini XYZ axis test points to verify direction mapping.
 
-Loads the 3 axis points, transforms via houdini_to_arm, then scales
-them to reachable positions (preserving direction) and loops.
+Loads the 3 axis points, transforms via houdini_to_arm, scales from
+arm base origin (0,0,0) to preserve true direction, and loops.
 """
 
+import math
 import sys
 import time
-import threading
 sys.path.insert(0, ".")
 
 from xarm.wrapper import XArmAPI
 from scripts.path_validator import load_path, houdini_to_arm, RPY
 
 SPEED = 120  # mm/s
-CENTER = (350, 0, 450)  # safe center to return to between points
+HOME = (300, 0, 400)  # safe rest position between moves
 
 
-def scale_to_reachable(points, max_dist=400, center=CENTER):
-    """Scale transformed points toward center so they're reachable.
-    Preserves direction from center, caps distance."""
-    import math
+def scale_from_origin(points, factor=0.5):
+    """Scale points from arm base origin (0,0,0). Preserves true direction."""
     result = []
     for p in points:
-        dx = p[0] - center[0]
-        dy = p[1] - center[1]
-        dz = p[2] - center[2]
-        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if dist > max_dist:
-            s = max_dist / dist
-            dx *= s
-            dy *= s
-            dz *= s
-        result.append([
-            round(center[0] + dx, 1),
-            round(center[1] + dy, 1),
-            round(center[2] + dz, 1),
-        ])
+        result.append([round(p[0] * factor, 1),
+                       round(p[1] * factor, 1),
+                       round(p[2] * factor, 1)])
     return result
 
 
@@ -56,9 +43,10 @@ def main():
     for i, p in enumerate(arm_points):
         print(f"  #{i}: Arm ({p[0]}, {p[1]}, {p[2]}) mm")
 
-    safe_points = scale_to_reachable(arm_points)
+    # Scale from origin — 0.5x keeps direction, gives ~500mm reach
+    safe_points = scale_from_origin(arm_points, factor=0.5)
 
-    print(f"\nScaled to reachable (direction preserved):")
+    print(f"\nScaled 0.5x from origin (direction preserved):")
     labels = ["Hou +X (arm forward)", "Hou +Y (arm up)", "Hou +Z (arm left)"]
     for i, (p, lbl) in enumerate(zip(safe_points, labels)):
         print(f"  #{i}: Arm ({p[0]}, {p[1]}, {p[2]}) mm  <- {lbl}")
@@ -76,12 +64,12 @@ def main():
     loop_count = 0
 
     try:
-        # Go to center first
-        print(f"\nMoving to center ({CENTER[0]}, {CENTER[1]}, {CENTER[2]})")
-        arm.set_position(*CENTER, *RPY, speed=80, wait=True)
+        # Go to home first
+        print(f"\nMoving to home {HOME}")
+        arm.set_position(*HOME, *RPY, speed=80, wait=True)
         time.sleep(0.5)
 
-        print(f"Looping: center -> Hou+X -> center -> Hou+Y -> center -> Hou+Z -> ... (Ctrl+C)\n")
+        print(f"Looping: home -> Hou+X -> home -> Hou+Y -> home -> Hou+Z -> ... (Ctrl+C)\n")
 
         while True:
             for i, (p, lbl) in enumerate(zip(safe_points, labels)):
@@ -92,16 +80,26 @@ def main():
                     arm.set_state(0)
                     time.sleep(0.3)
 
-                # Move to axis point
-                arm.set_position(p[0], p[1], p[2], *RPY, speed=SPEED, wait=True)
-                time.sleep(0.8)
+                print(f"    -> {lbl}: ({p[0]}, {p[1]}, {p[2]})")
+                ret = arm.set_position(p[0], p[1], p[2], *RPY,
+                                       speed=SPEED, wait=True)
 
-                # Return to center
-                arm.set_position(*CENTER, *RPY, speed=SPEED, wait=True)
+                if arm.error_code != 0:
+                    print(f"       UNREACHABLE (err={arm.error_code}), recovering")
+                    arm.clean_error()
+                    arm.motion_enable(enable=True)
+                    arm.set_mode(0)
+                    arm.set_state(0)
+                    time.sleep(0.3)
+
+                time.sleep(1.0)
+
+                # Return to home
+                arm.set_position(*HOME, *RPY, speed=SPEED, wait=True)
                 time.sleep(0.3)
 
             loop_count += 1
-            print(f"  Loop #{loop_count} done")
+            print(f"  Loop #{loop_count} done\n")
 
     except KeyboardInterrupt:
         print("\nStopping...")
