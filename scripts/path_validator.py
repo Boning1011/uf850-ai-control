@@ -1,13 +1,18 @@
 """
 Path Validator — Automated path feasibility testing and speed optimization.
 
-Given a 3D path (JSON or CSV), validates reachability via IK and uses binary
-search on the Docker simulator to find the maximum feasible speed.
+Given a 3D path (JSON, CSV, or Houdini .geo), validates reachability via IK
+and uses binary search on the Docker simulator to find the maximum feasible speed.
+
+Supported formats:
+  - Simple JSON: [[x, y, z], ...]
+  - CSV: x,y,z per row (with optional header)
+  - Houdini .geo JSON: exported via Geometry ROP with "JSON" format
 
 Usage:
     python scripts/path_validator.py path_data/example_square.json
+    python scripts/path_validator.py path_data/hou_parametric_celeis_01.json --ik-only
     python scripts/path_validator.py path_data/my_path.csv --speed-max 800 --tolerance 5
-    python scripts/path_validator.py path_data/my_path.json --output results.json
 """
 
 import argparse
@@ -36,6 +41,14 @@ JOINT_LIMITS_DEG = [
     (-360.0, 360.0),     # J6
 ]
 
+# Default target workspace for auto-fit mapping (mm)
+# Conservative center region of UF850 workspace
+DEFAULT_TARGET_BOUNDS = {
+    "x": (200, 420),
+    "y": (-100, 100),
+    "z": (300, 600),
+}
+
 # Error code names (subset)
 ERROR_NAMES = {
     0: "OK", 1: "Emergency Stop", 2: "Emergency IO",
@@ -45,39 +58,214 @@ ERROR_NAMES = {
 }
 
 
+# ---------- Houdini .geo parser ----------
+
+def _geo_array_to_dict(arr):
+    """Convert Houdini's alternating [key, value, key, value, ...] array to dict.
+    If input is already a dict, return it as-is."""
+    if isinstance(arr, dict):
+        return arr
+    if not isinstance(arr, list):
+        return {}
+    d = {}
+    i = 0
+    while i < len(arr) - 1:
+        key = arr[i]
+        val = arr[i + 1]
+        if isinstance(key, str):
+            d[key] = val
+            i += 2
+        else:
+            i += 1
+    return d
+
+
+def _is_houdini_geo(data):
+    """Detect if JSON data is Houdini .geo format."""
+    return (isinstance(data, list)
+            and len(data) >= 2
+            and data[0] == "fileversion")
+
+
+def parse_houdini_geo(data):
+    """Extract point positions from Houdini .geo JSON -> list of [x, y, z]."""
+    geo = _geo_array_to_dict(data)
+
+    pointcount = geo.get("pointcount", 0)
+    if pointcount == 0:
+        raise ValueError("Houdini .geo file has 0 points")
+
+    # Navigate: attributes > pointattributes > [attr_entry] > values > tuples
+    attrs_raw = geo.get("attributes")
+    if not attrs_raw:
+        raise ValueError("No 'attributes' in Houdini .geo")
+
+    attrs = _geo_array_to_dict(attrs_raw)
+    point_attrs = attrs.get("pointattributes")
+    if not point_attrs:
+        raise ValueError("No 'pointattributes' in Houdini .geo")
+
+    # Find the "P" (position) attribute
+    tuples_data = None
+    for attr_entry in point_attrs:
+        # Each attr_entry is [metadata_array, data_array]
+        if not isinstance(attr_entry, list) or len(attr_entry) < 2:
+            continue
+        meta = _geo_array_to_dict(attr_entry[0])
+        if meta.get("name") == "P":
+            values_dict = _geo_array_to_dict(attr_entry[1])
+            values_inner = values_dict.get("values")
+            if values_inner:
+                inner = _geo_array_to_dict(values_inner)
+                tuples_data = inner.get("tuples")
+            break
+
+    if not tuples_data:
+        raise ValueError("Could not find point position data (attribute 'P') in .geo")
+
+    # Validate
+    points = []
+    for i, pt in enumerate(tuples_data):
+        if len(pt) < 3:
+            raise ValueError(f"Point #{i} has {len(pt)} components, need 3")
+        points.append([float(pt[0]), float(pt[1]), float(pt[2])])
+
+    info = _geo_array_to_dict(geo.get("info", []))
+    software = info.get("software", "unknown")
+    print(f"  Houdini .geo detected ({software}, {pointcount} points)")
+
+    return points
+
+
+# ---------- coordinate mapping ----------
+
+def auto_fit_to_workspace(points, target=None):
+    """Scale and translate points to fit within the target workspace.
+
+    Preserves aspect ratio. Maps to arm coordinates:
+      Houdini X -> arm Y (left/right)
+      Houdini Y -> arm Z (up/down)
+      Houdini Z -> arm X (forward/back)
+    """
+    if target is None:
+        target = DEFAULT_TARGET_BOUNDS
+
+    if not points:
+        return points
+
+    # Find source bounding box
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    zs = [p[2] for p in points]
+    src_min = [min(xs), min(ys), min(zs)]
+    src_max = [max(xs), max(ys), max(zs)]
+    src_range = [src_max[i] - src_min[i] for i in range(3)]
+
+    # Target ranges (in arm space after axis remap)
+    tgt_ranges = [
+        target["y"][1] - target["y"][0],  # hou X -> arm Y
+        target["z"][1] - target["z"][0],  # hou Y -> arm Z
+        target["x"][1] - target["x"][0],  # hou Z -> arm X
+    ]
+    tgt_centers = [
+        (target["y"][0] + target["y"][1]) / 2,
+        (target["z"][0] + target["z"][1]) / 2,
+        (target["x"][0] + target["x"][1]) / 2,
+    ]
+
+    # Uniform scale (preserve aspect ratio)
+    scales = []
+    for i in range(3):
+        if src_range[i] > 1e-6:
+            scales.append(tgt_ranges[i] / src_range[i])
+        else:
+            scales.append(1.0)
+    scale = min(scales)
+
+    # Source center
+    src_centers = [(src_min[i] + src_max[i]) / 2 for i in range(3)]
+
+    # Map points: center, scale, remap axes
+    mapped = []
+    for p in points:
+        # Center and scale in source space
+        sx = (p[0] - src_centers[0]) * scale
+        sy = (p[1] - src_centers[1]) * scale
+        sz = (p[2] - src_centers[2]) * scale
+        # Remap: hou X -> arm Y, hou Y -> arm Z, hou Z -> arm X
+        arm_x = sz + tgt_centers[2]
+        arm_y = sx + tgt_centers[0]
+        arm_z = sy + tgt_centers[1]
+        mapped.append([round(arm_x, 2), round(arm_y, 2), round(arm_z, 2)])
+
+    # Print mapping info
+    print(f"  Source bounds: X=[{src_min[0]:.3f}, {src_max[0]:.3f}] "
+          f"Y=[{src_min[1]:.3f}, {src_max[1]:.3f}] Z=[{src_min[2]:.3f}, {src_max[2]:.3f}]")
+    arm_xs = [p[0] for p in mapped]
+    arm_ys = [p[1] for p in mapped]
+    arm_zs = [p[2] for p in mapped]
+    print(f"  Mapped bounds: X=[{min(arm_xs):.1f}, {max(arm_xs):.1f}] "
+          f"Y=[{min(arm_ys):.1f}, {max(arm_ys):.1f}] Z=[{min(arm_zs):.1f}, {max(arm_zs):.1f}] mm")
+    print(f"  Scale factor: {scale:.4f} (uniform, aspect-preserving)")
+
+    return mapped
+
+
+# ---------- subsampling ----------
+
+def subsample_path(points, step):
+    """Take every Nth point, always including first and last."""
+    if step <= 1 or len(points) <= step:
+        return points
+    sampled = points[::step]
+    if sampled[-1] != points[-1]:
+        sampled.append(points[-1])
+    return sampled
+
+
 # ---------- path loading ----------
 
 def load_path(filepath):
-    """Load a 3D path from JSON or CSV file -> list of [x, y, z]."""
+    """Load a 3D path from JSON (simple or Houdini .geo) or CSV -> list of [x, y, z].
+
+    Returns (points, is_houdini) where is_houdini indicates if coordinate mapping is needed.
+    """
     ext = os.path.splitext(filepath)[1].lower()
 
     if ext == ".json":
         with open(filepath, "r") as f:
             data = json.load(f)
+
+        # Detect format
+        if _is_houdini_geo(data):
+            return parse_houdini_geo(data), True
+        else:
+            # Simple [[x,y,z], ...] format
+            points = data
+
     elif ext == ".csv":
-        data = []
+        points = []
         with open(filepath, "r", newline="") as f:
             reader = csv.reader(f)
             for row in reader:
-                # Skip header rows (non-numeric first field)
                 try:
                     float(row[0])
                 except ValueError:
                     continue
-                data.append([float(v) for v in row[:3]])
+                points.append([float(v) for v in row[:3]])
     else:
         raise ValueError(f"Unsupported file format: {ext} (use .json or .csv)")
 
-    # Validate
-    for i, pt in enumerate(data):
+    # Validate simple format
+    for i, pt in enumerate(points):
         if len(pt) < 3:
             raise ValueError(f"Waypoint #{i} has {len(pt)} values, need 3 (x, y, z)")
-        data[i] = [float(pt[0]), float(pt[1]), float(pt[2])]
+        points[i] = [float(pt[0]), float(pt[1]), float(pt[2])]
 
-    if len(data) < 2:
-        raise ValueError(f"Path needs at least 2 waypoints, got {len(data)}")
+    if len(points) < 2:
+        raise ValueError(f"Path needs at least 2 waypoints, got {len(points)}")
 
-    return data
+    return points, False
 
 
 # ---------- IK reachability check ----------
@@ -257,7 +445,7 @@ def print_report(path_file, waypoints, reachability, speed_result):
         print(" ** SOME UNREACHABLE **")
         for r in reachability["results"]:
             if not r["ik_ok"]:
-                print(f"    wp#{r['index']}: {r['xyz']} — IK failed")
+                print(f"    wp#{r['index']}: {r['xyz']} - IK failed")
 
     if wm:
         joint_name = f"J{wm[0] + 1}"
@@ -304,7 +492,7 @@ def save_results(output_path, path_file, waypoints, reachability, speed_result):
 def main():
     parser = argparse.ArgumentParser(
         description="Path Validator — test path feasibility and find max speed")
-    parser.add_argument("path_file", help="Path file (JSON or CSV)")
+    parser.add_argument("path_file", help="Path file (JSON, Houdini .geo, or CSV)")
     parser.add_argument("--ip", default="127.0.0.1",
                         help="Arm/simulator IP (default: 127.0.0.1)")
     parser.add_argument("--speed-min", type=int, default=50,
@@ -317,12 +505,33 @@ def main():
                         help="Save results to JSON file")
     parser.add_argument("--ik-only", action="store_true",
                         help="Only run IK reachability check, skip speed test")
+    parser.add_argument("--subsample", type=int, default=1,
+                        help="Take every Nth point (default: 1 = all points)")
+    parser.add_argument("--no-fit", action="store_true",
+                        help="Skip auto-fit mapping for Houdini files (use raw coords)")
     args = parser.parse_args()
 
     # Load path
     print(f"Loading path: {args.path_file}")
-    waypoints = load_path(args.path_file)
-    print(f"  {len(waypoints)} waypoints loaded")
+    waypoints, is_houdini = load_path(args.path_file)
+    print(f"  {len(waypoints)} points loaded")
+
+    # Auto-fit Houdini coordinates to arm workspace
+    if is_houdini and not args.no_fit:
+        print(f"\n  Auto-fitting to arm workspace...")
+        waypoints = auto_fit_to_workspace(waypoints)
+
+    # Subsample
+    if args.subsample > 1:
+        orig_count = len(waypoints)
+        waypoints = subsample_path(waypoints, args.subsample)
+        print(f"  Subsampled: {orig_count} -> {len(waypoints)} points (every {args.subsample}th)")
+
+    if len(waypoints) < 2:
+        print("ERROR: Need at least 2 waypoints after processing")
+        sys.exit(1)
+
+    print(f"  Final path: {len(waypoints)} waypoints")
 
     # Connect to arm
     print(f"\nConnecting to {args.ip}...")
@@ -345,11 +554,21 @@ def main():
 
         if not reachability["ok"]:
             print("  WARNING: Some waypoints are unreachable!")
+            fail_count = sum(1 for r in reachability["results"] if not r["ik_ok"])
+            print(f"  {fail_count}/{len(waypoints)} unreachable")
+            # Show first few
+            shown = 0
             for r in reachability["results"]:
                 if not r["ik_ok"]:
-                    print(f"    wp#{r['index']}: {r['xyz']}")
+                    print(f"    wp#{r['index']}: [{r['xyz'][0]:.1f}, {r['xyz'][1]:.1f}, {r['xyz'][2]:.1f}]")
+                    shown += 1
+                    if shown >= 5:
+                        remaining = fail_count - shown
+                        if remaining > 0:
+                            print(f"    ... and {remaining} more")
+                        break
             if not args.ik_only:
-                print("  Continuing with speed test anyway (unreachable points may cause errors)...")
+                print("  Continuing with speed test anyway...")
         else:
             print(f"  All {len(waypoints)} waypoints reachable")
             wm = reachability["worst_margin"]
