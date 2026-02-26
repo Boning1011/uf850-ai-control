@@ -74,6 +74,8 @@ BLEND_DURATION = 0.5
 DT = 0.04  # ~25 Hz
 
 STATE_NAMES = {0: "IDLE", 1: "CURIOUS", 2: "ALERT", 3: "DANCE"}
+# Speed multiplier per state (applied to --speed)
+SPEED_MULT = {0: 0.4, 1: 1.0, 2: 2.0, 3: 3.0}
 
 # Error code lookup (subset)
 ERROR_NAMES = {
@@ -89,10 +91,10 @@ ERROR_NAMES = {
 # ---------- motion patterns (return x, y, z only — RPY always fixed) ----------
 
 def pattern_idle(t):
-    """Breathing — visible forward/back and up/down reach."""
-    x = CX + 50 * math.sin(2 * math.pi * 0.06 * t)
-    y = CY + 30 * math.sin(2 * math.pi * 0.08 * t)
-    z = CZ + 50 * math.sin(2 * math.pi * 0.10 * t)
+    """Breathing — small, slow, calm drift. Clearly 'asleep'."""
+    x = CX + 15 * math.sin(2 * math.pi * 0.04 * t)
+    y = CY + 10 * math.sin(2 * math.pi * 0.05 * t)
+    z = CZ + 20 * math.sin(2 * math.pi * 0.03 * t)
     return x, y, z
 
 
@@ -114,8 +116,8 @@ _ALERT_WP = [
 ]
 
 def pattern_alert(t):
-    """Triangular waypoint circuit — fast and aggressive."""
-    segment = int(t / 0.8) % 3
+    """Triangular waypoint circuit — fast snappy jumps."""
+    segment = int(t / 0.5) % 3
     return _ALERT_WP[segment]
 
 
@@ -423,8 +425,8 @@ def main():
             # 4. Safety clamp (DANCE uses wider bounds)
             x, y, z = clamp_position(x, y, z, state=dispatcher.current_state)
 
-            # 5. Send command (DANCE gets 3x speed for frantic feel)
-            spd = args.speed * 3 if dispatcher.current_state == 3 else args.speed
+            # 5. Send command (speed varies per mode)
+            spd = args.speed * SPEED_MULT[dispatcher.current_state]
             ret = ctrl.arm.set_position(
                 x, y, z, ROLL, PITCH, YAW,
                 speed=spd, wait=False)
