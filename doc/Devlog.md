@@ -4,6 +4,39 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-02-26 — Houdini ↔ 机械臂坐标映射验证通过
+
+**验证结果：**
+- Houdini 场景（Y-up 右手系，单位：米）→ 机械臂坐标（Z-up，单位：mm）映射完全正确
+- 三轴方向标定测试：Hou +X/+Y/+Z 分别对应臂前伸/上抬/左移，与 Houdini 视口一致
+- 缩放比 ×1000（Houdini 1 单位 = 1 米 = 1000mm），臂模型高度 0.8 Hou = 800mm 实测匹配
+
+**确定的映射关系（`houdini_to_arm()`）：**
+
+| Houdini | → Arm | 含义 |
+|---------|-------|------|
+| +X | +X | 前（臂面朝方向） |
+| +Y | +Z | 上 |
+| +Z | +Y | 左（右手系） |
+
+**关键决策：去掉 auto-fit，使用直通变换**
+- 用户在 Houdini 里导入了臂模型作参考，相对模型摆放曲线
+- 之前的 `auto_fit_to_workspace` 会任意缩放+平移，破坏空间关系
+- 改为 `houdini_to_arm()`：只做轴交换 + ×1000，不缩放不平移
+- What you see in Houdini is what the arm does
+
+**踩坑：**
+- `auto_fit_to_workspace` 的 bug：常量轴（range=0）给默认 scale=1.0，`min(scales)` 取到它，导致整条路径没放大（总长才 2.8mm）
+- 标定缩放时不能从任意中心点缩放，必须从臂底座原点 (0,0,0) 缩放才能保持方向正确
+
+**脚本：**
+- `scripts/loop_path.py` — 加载 Houdini 路径并循环播放
+- `scripts/loop_axis_test.py` — 三轴方向标定循环测试
+- `scripts/test_axis_directions.py` — 单次三轴方向测试
+- `scripts/axis_calibrate.py` — 交互式六方向标定
+
+---
+
 ## 2026-02-25 — 连续运动 + 自动错误恢复机制验证
 
 **验证结果：**
