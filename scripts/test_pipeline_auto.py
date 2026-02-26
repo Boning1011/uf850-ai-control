@@ -197,8 +197,8 @@ def main():
     parser = argparse.ArgumentParser(description="Autonomous pipeline test")
     parser.add_argument("--duration", type=int, default=600,
                         help="Test duration in seconds (default: 600 = 10 min)")
-    parser.add_argument("--rate", type=float, default=0.33,
-                        help="VLM calls per second (default: 0.33 = once per 3s)")
+    parser.add_argument("--rate", type=float, default=0.1,
+                        help="VLM calls per second (default: 0.1 = once per 10s, stays within free tier)")
     parser.add_argument("--persona", default="personas/default.yaml")
     args = parser.parse_args()
 
@@ -339,9 +339,21 @@ def main():
                       f"| triggers: {active_str}", flush=True)
 
             except Exception as e:
+                err_str = str(e)
                 error_count += 1
-                logger.log_event("VLM_ERROR", str(e))
-                print(f"[VLM ERROR #{error_count}] {e}", flush=True)
+
+                # Handle rate limit (429) with retry delay
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    import re
+                    delay_match = re.search(r'retry.*?(\d+)', err_str, re.IGNORECASE)
+                    wait = int(delay_match.group(1)) + 5 if delay_match else 45
+                    logger.log_event("RATE_LIMIT", f"Waiting {wait}s before retry")
+                    print(f"[RATE LIMIT] Waiting {wait}s...", flush=True)
+                    time.sleep(wait)
+                    continue
+                else:
+                    logger.log_event("VLM_ERROR", err_str)
+                    print(f"[VLM ERROR #{error_count}] {err_str}", flush=True)
 
             time.sleep(vlm_interval)
 
