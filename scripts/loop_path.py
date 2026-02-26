@@ -20,8 +20,7 @@ from xarm.wrapper import XArmAPI
 # Re-use path loading and mapping from path_validator
 sys.path.insert(0, ".")
 from scripts.path_validator import (
-    load_path, auto_fit_to_workspace, subsample_path, RPY,
-    DEFAULT_TARGET_BOUNDS,
+    load_path, houdini_to_arm, subsample_path, RPY,
 )
 
 ERROR_NAMES = {
@@ -173,23 +172,11 @@ def main():
     waypoints, is_houdini = load_path(args.path_file)
     print(f"  {len(waypoints)} points loaded")
 
-    # Print raw Houdini bounds for comparison
-    if is_houdini:
-        xs = [p[0] for p in waypoints]
-        ys = [p[1] for p in waypoints]
-        zs = [p[2] for p in waypoints]
-        print(f"\n  === Houdini raw coords (for comparison) ===")
-        print(f"  Hou X: [{min(xs):.4f} .. {max(xs):.4f}]  (range: {max(xs)-min(xs):.4f})")
-        print(f"  Hou Y: [{min(ys):.4f} .. {max(ys):.4f}]  (range: {max(ys)-min(ys):.4f})")
-        print(f"  Hou Z: [{min(zs):.4f} .. {max(zs):.4f}]  (range: {max(zs)-min(zs):.4f})")
-
-    # Auto-fit
+    # Houdini -> arm coordinate transform
     if is_houdini and not args.no_fit:
-        print(f"\n  === Auto-fit mapping ===")
-        print(f"  Axis remap: Hou X -> Arm Y, Hou Y -> Arm Z, Hou Z -> Arm X")
-        print(f"  Target workspace: X={DEFAULT_TARGET_BOUNDS['x']}, "
-              f"Y={DEFAULT_TARGET_BOUNDS['y']}, Z={DEFAULT_TARGET_BOUNDS['z']}")
-        waypoints = auto_fit_to_workspace(waypoints)
+        print(f"\n  === Houdini -> Arm mapping ===")
+        print(f"  Hou X -> Arm X (forward), Hou Y -> Arm Z (up), Hou Z -> Arm Y (left)")
+        waypoints = houdini_to_arm(waypoints)
 
     # Subsample
     if args.subsample > 1:

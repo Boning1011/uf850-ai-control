@@ -41,14 +41,6 @@ JOINT_LIMITS_DEG = [
     (-360.0, 360.0),     # J6
 ]
 
-# Default target workspace for auto-fit mapping (mm)
-# Conservative center region of UF850 workspace
-DEFAULT_TARGET_BOUNDS = {
-    "x": (200, 420),
-    "y": (-100, 100),
-    "z": (300, 600),
-}
-
 # Error code names (subset)
 ERROR_NAMES = {
     0: "OK", 1: "Emergency Stop", 2: "Emergency IO",
@@ -139,76 +131,47 @@ def parse_houdini_geo(data):
 
 # ---------- coordinate mapping ----------
 
-def auto_fit_to_workspace(points, target=None):
-    """Scale and translate points to fit within the target workspace.
+def houdini_to_arm(points, scale=1000.0):
+    """Direct coordinate transform from Houdini scene to arm coordinates.
 
-    Preserves aspect ratio. Maps to arm coordinates:
-      Houdini X -> arm Y (left/right)
-      Houdini Y -> arm Z (up/down)
-      Houdini Z -> arm X (forward/back)
+    No auto-fit, no scaling-to-fit — preserves the exact spatial relationship
+    the user set up in Houdini relative to the arm model.
+
+    Axis mapping (Houdini Y-up right-hand, arm faces +X in Houdini):
+      Houdini X  ->  Arm X  (forward, away from base)
+      Houdini Y  ->  Arm Z  (up)
+      Houdini Z  ->  Arm Y  (left, right-hand rule)
+
+    Scale: Houdini units (meters) × 1000 -> mm
     """
-    if target is None:
-        target = DEFAULT_TARGET_BOUNDS
-
     if not points:
         return points
 
-    # Find source bounding box
+    # Print source bounds
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
     zs = [p[2] for p in points]
-    src_min = [min(xs), min(ys), min(zs)]
-    src_max = [max(xs), max(ys), max(zs)]
-    src_range = [src_max[i] - src_min[i] for i in range(3)]
+    print(f"  Houdini bounds:")
+    print(f"    X: [{min(xs):.4f}, {max(xs):.4f}] (-> Arm X, forward)")
+    print(f"    Y: [{min(ys):.4f}, {max(ys):.4f}] (-> Arm Z, up)")
+    print(f"    Z: [{min(zs):.4f}, {max(zs):.4f}] (-> Arm Y, left)")
+    print(f"  Scale: x{scale} (Houdini unit -> mm)")
 
-    # Target ranges (in arm space after axis remap)
-    tgt_ranges = [
-        target["y"][1] - target["y"][0],  # hou X -> arm Y
-        target["z"][1] - target["z"][0],  # hou Y -> arm Z
-        target["x"][1] - target["x"][0],  # hou Z -> arm X
-    ]
-    tgt_centers = [
-        (target["y"][0] + target["y"][1]) / 2,
-        (target["z"][0] + target["z"][1]) / 2,
-        (target["x"][0] + target["x"][1]) / 2,
-    ]
-
-    # Uniform scale (preserve aspect ratio)
-    # Only consider axes that actually vary — constant axes must not
-    # contribute a bogus scale=1.0 that dominates min().
-    scales = []
-    for i in range(3):
-        if src_range[i] > 1e-6:
-            scales.append(tgt_ranges[i] / src_range[i])
-    if not scales:
-        raise ValueError("All axes are constant — cannot fit a point to a workspace")
-    scale = min(scales)
-
-    # Source center
-    src_centers = [(src_min[i] + src_max[i]) / 2 for i in range(3)]
-
-    # Map points: center, scale, remap axes
     mapped = []
     for p in points:
-        # Center and scale in source space
-        sx = (p[0] - src_centers[0]) * scale
-        sy = (p[1] - src_centers[1]) * scale
-        sz = (p[2] - src_centers[2]) * scale
-        # Remap: hou X -> arm Y, hou Y -> arm Z, hou Z -> arm X
-        arm_x = sz + tgt_centers[2]
-        arm_y = sx + tgt_centers[0]
-        arm_z = sy + tgt_centers[1]
+        arm_x = p[0] * scale
+        arm_z = p[1] * scale
+        arm_y = p[2] * scale
         mapped.append([round(arm_x, 2), round(arm_y, 2), round(arm_z, 2)])
 
-    # Print mapping info
-    print(f"  Source bounds: X=[{src_min[0]:.3f}, {src_max[0]:.3f}] "
-          f"Y=[{src_min[1]:.3f}, {src_max[1]:.3f}] Z=[{src_min[2]:.3f}, {src_max[2]:.3f}]")
+    # Print mapped bounds
     arm_xs = [p[0] for p in mapped]
     arm_ys = [p[1] for p in mapped]
     arm_zs = [p[2] for p in mapped]
-    print(f"  Mapped bounds: X=[{min(arm_xs):.1f}, {max(arm_xs):.1f}] "
-          f"Y=[{min(arm_ys):.1f}, {max(arm_ys):.1f}] Z=[{min(arm_zs):.1f}, {max(arm_zs):.1f}] mm")
-    print(f"  Scale factor: {scale:.4f} (uniform, aspect-preserving)")
+    print(f"  Arm bounds (mm):")
+    print(f"    X: [{min(arm_xs):.1f}, {max(arm_xs):.1f}]  (forward/back)")
+    print(f"    Y: [{min(arm_ys):.1f}, {max(arm_ys):.1f}]  (left/right)")
+    print(f"    Z: [{min(arm_zs):.1f}, {max(arm_zs):.1f}]  (up/down)")
 
     return mapped
 
@@ -518,10 +481,10 @@ def main():
     waypoints, is_houdini = load_path(args.path_file)
     print(f"  {len(waypoints)} points loaded")
 
-    # Auto-fit Houdini coordinates to arm workspace
+    # Transform Houdini coordinates to arm space
     if is_houdini and not args.no_fit:
-        print(f"\n  Auto-fitting to arm workspace...")
-        waypoints = auto_fit_to_workspace(waypoints)
+        print(f"\n  Mapping Houdini -> arm coordinates...")
+        waypoints = houdini_to_arm(waypoints)
 
     # Subsample
     if args.subsample > 1:
