@@ -719,30 +719,30 @@ function handleState(msg) {
     document.getElementById('motionSpeed').textContent = msg.motion.speed.toFixed(0) + ' mm/s';
   }
 
-  // Motion debug
+  // Motion debug (v2: per-mode patterns — fields may be arrays or scalars)
   if (msg.motion_debug) {
     const d = msg.motion_debug;
-    document.getElementById('dbgAmp').textContent = d.amp ? d.amp.map(v => v.toFixed(0)).join(' / ') : '--';
-    document.getElementById('dbgFreq').textContent = d.freq ? d.freq.map(v => v.toFixed(2)).join(' / ') : '--';
-    document.getElementById('dbgPhase').textContent = d.phase ? d.phase.map(v => (v * 100).toFixed(0) + '%').join(' / ') : '--';
+    document.getElementById('dbgAmp').textContent =
+      Array.isArray(d.amp) ? d.amp.map(v => v.toFixed(0)).join(' / ') : '--';
+    document.getElementById('dbgFreq').textContent =
+      Array.isArray(d.freq) ? d.freq.map(v => v.toFixed(2)).join(' / ') :
+      (typeof d.freq === 'number' ? d.freq.toFixed(3) + ' Hz' : '--');
+    document.getElementById('dbgPhase').textContent =
+      d.pattern ? d.pattern : (Array.isArray(d.phase) ? d.phase.map(v => (v * 100).toFixed(0) + '%').join(' / ') : '--');
 
+    // Flags: show transition boost instead of old harmonic/playful/jitter
     document.getElementById('flagHarmonic').style.background =
-      d.mood_harmonic > 0.05 ? 'var(--orange)' : 'var(--border)';
+      d.transition_boost ? 'var(--red)' : 'var(--border)';
     document.getElementById('flagPlayful').style.background =
-      d.playful_mod > 0.05 ? 'var(--purple)' : 'var(--border)';
+      d.pitch && Math.abs(d.pitch) > 1 ? 'var(--purple)' : 'var(--border)';
     document.getElementById('flagJitter').style.background =
       d.jitter_active ? 'var(--red)' : 'var(--border)';
 
-    document.getElementById('dbgSpeedMult').textContent = (d.speed_mult || 1).toFixed(1) + 'x';
+    document.getElementById('dbgSpeedMult').textContent = (d.speed || '--') + ' mm/s';
 
-    // Mode multiplier indicators
-    const mAmp = d.mode_amp_mult || 1;
-    const mFreq = d.mode_freq_mult || 1;
-    document.getElementById('flagModeMult').style.background =
-      (mAmp > 1.1 || mFreq > 1.1) ? 'var(--green)' :
-      (mAmp < 0.9 || mFreq < 0.9) ? 'var(--orange)' : 'var(--border)';
-    document.getElementById('modeMultLabel').textContent =
-      `amp ${mAmp.toFixed(1)}x freq ${mFreq.toFixed(1)}x`;
+    // Mode indicator
+    document.getElementById('flagModeMult').style.background = 'var(--border)';
+    document.getElementById('modeMultLabel').textContent = d.mode || '--';
   }
 
   // Arm telemetry
