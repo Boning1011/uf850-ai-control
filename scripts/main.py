@@ -31,7 +31,7 @@ from arm_controller import ArmController, acquire_lock
 from persona import PersonaConfig, PerceptionState, StateHolder
 from motion_gen import ParametricMotionGenerator
 from perception import GeminiProvider, FrameBuffer, CameraThread, PerceptionThread
-from triggers import TriggerEngine
+from triggers import TriggerEngine, ModeEngine
 
 DT = 0.04  # 25 Hz
 
@@ -130,6 +130,7 @@ def main():
     state_holder = StateHolder(smoothing=0.3)
     motion_gen = ParametricMotionGenerator(config)
     trigger_engine = TriggerEngine()
+    mode_engine = ModeEngine(blend_speed=0.15)
 
     # Init arm
     ctrl = ArmController(
@@ -233,10 +234,27 @@ def main():
                 if dashboard:
                     dashboard.push_event("SYSTEM", "Camera opened")
 
-            # VLM result callback -> dashboard + triggers
+            # VLM result callback -> triggers -> mode -> dashboard
             def on_vlm_result(raw_state, latency, call_count):
                 # Check triggers on raw (unsmoothed) state
                 newly_fired = trigger_engine.check(raw_state)
+
+                # Update mode from active triggers -> apply to motion generator
+                old_mode, new_mode, mode_params = mode_engine.update(
+                    trigger_engine.active_triggers
+                )
+                motion_gen.set_mode_params(mode_params)
+
+                # Log mode transitions
+                if old_mode != new_mode:
+                    trigger_reason = ", ".join(sorted(trigger_engine.active_triggers)) or "(none)"
+                    print(f"[MODE] {old_mode} -> {new_mode}  triggers: {trigger_reason}",
+                          flush=True)
+                    if dashboard:
+                        dashboard.push_mode_transition(
+                            old_mode, new_mode, trigger_reason, 1.0
+                        )
+
                 smoothed = state_holder.get()
 
                 if dashboard:
@@ -301,6 +319,10 @@ def main():
                 time.sleep(0.1)
                 continue
 
+            # Keep blending mode params even between VLM calls (smooth transition)
+            mode_engine.update(trigger_engine.active_triggers)
+            motion_gen.set_mode_params(mode_engine._current)
+
             state = state_holder.get()
             x, y, z = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
@@ -314,8 +336,9 @@ def main():
                 vlm_info = ""
                 if perception:
                     vlm_info = f"  vlm#{perception.call_count}"
-                print(f"  [e={state.energy:.2f} m={state.mood:.2f} "
-                      f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f}] "
+                print(f"  [{mode_engine.current_mode}] "
+                      f"e={state.energy:.2f} m={state.mood:.2f} "
+                      f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
                       f"X={x:.0f} Y={y:.0f} Z={z:.0f} spd={speed:.0f}{vlm_info}")
 
                 # Push state to dashboard periodically (even without VLM updates)

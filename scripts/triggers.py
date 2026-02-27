@@ -85,3 +85,80 @@ class TriggerEngine:
             "presence": new.presence - old.presence,
             "urgency": new.urgency - old.urgency,
         }
+
+
+class ModeEngine:
+    """Maps active triggers to a motion mode with smooth parameter blending.
+
+    Each mode provides multipliers (amp, freq, speed) and a center Z offset
+    that are applied to the parametric motion generator. Transitions between
+    modes are smoothed via exponential interpolation.
+    """
+
+    # Mode parameters: multipliers applied to base parametric motion
+    MODE_PARAMS = {
+        "CALM":     {"amp_mult": 1.0, "freq_mult": 1.0, "speed_mult": 1.0, "center_z_offset": 0},
+        "ALERT":    {"amp_mult": 1.5, "freq_mult": 1.2, "speed_mult": 1.4, "center_z_offset": 30},
+        "EXCITED":  {"amp_mult": 2.5, "freq_mult": 1.8, "speed_mult": 2.5, "center_z_offset": 50},
+        "PLAYFUL":  {"amp_mult": 2.0, "freq_mult": 0.8, "speed_mult": 1.5, "center_z_offset": 20},
+        "TENSE":    {"amp_mult": 1.3, "freq_mult": 2.0, "speed_mult": 1.8, "center_z_offset": -20},
+        "DORMANT":  {"amp_mult": 0.3, "freq_mult": 0.5, "speed_mult": 0.4, "center_z_offset": -40},
+    }
+
+    # Priority-ordered rules: first match wins (highest priority first)
+    TRIGGER_RULES = [
+        ({"HIGH_ENERGY", "SUDDEN_MOVEMENT"}, "EXCITED"),   # any of these
+        ({"HIGH_ENERGY"},                     "EXCITED"),
+        ({"SUDDEN_MOVEMENT"},                 "EXCITED"),
+        ({"PLAYFUL_MOOD"},                    "PLAYFUL"),
+        ({"TENSE_MOOD"},                      "TENSE"),
+        ({"HIGH_PRESENCE"},                   "ALERT"),
+        ({"HEAD_TURN_LEFT"},                  "ALERT"),
+        ({"HEAD_TURN_RIGHT"},                 "ALERT"),
+        ({"LOOKING_UP"},                      "ALERT"),
+        ({"LOOKING_DOWN"},                    "ALERT"),
+        ({"LOW_ENERGY", "LOW_PRESENCE"},      "DORMANT"),   # both required
+    ]
+
+    def __init__(self, blend_speed=0.15):
+        """
+        Args:
+            blend_speed: exponential blend factor per update (0-1).
+                         Lower = smoother/slower transitions.
+        """
+        self.current_mode = "CALM"
+        self.blend_speed = blend_speed
+        # Current blended params (start at CALM)
+        self._current = dict(self.MODE_PARAMS["CALM"])
+        self._target = dict(self.MODE_PARAMS["CALM"])
+
+    def update(self, active_triggers: set) -> tuple[str, dict]:
+        """Determine mode from active triggers, blend params smoothly.
+
+        Args:
+            active_triggers: set of trigger names currently active
+
+        Returns:
+            (mode_name, blended_params_dict)
+        """
+        # Determine target mode (first matching rule wins)
+        new_mode = "CALM"
+        for required_triggers, mode in self.TRIGGER_RULES:
+            if required_triggers <= active_triggers:  # subset check
+                new_mode = mode
+                break
+
+        # Special case: DORMANT requires BOTH LOW_ENERGY and LOW_PRESENCE
+        if new_mode == "CALM" and {"LOW_ENERGY", "LOW_PRESENCE"} <= active_triggers:
+            new_mode = "DORMANT"
+
+        old_mode = self.current_mode
+        self.current_mode = new_mode
+        self._target = dict(self.MODE_PARAMS[new_mode])
+
+        # Exponential blend toward target
+        a = self.blend_speed
+        for key in self._current:
+            self._current[key] = self._current[key] * (1 - a) + self._target[key] * a
+
+        return old_mode, new_mode, dict(self._current)

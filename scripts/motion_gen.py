@@ -28,6 +28,12 @@ class ParametricMotionGenerator:
     def __init__(self, persona_config):
         self.cfg = persona_config
         self._debug = {}  # cached debug state from last get_target call
+        # Mode multipliers (set by ModeEngine via set_mode_params)
+        self._mode = {"amp_mult": 1.0, "freq_mult": 1.0, "speed_mult": 1.0, "center_z_offset": 0}
+
+    def set_mode_params(self, params):
+        """Apply mode multipliers from ModeEngine."""
+        self._mode = params
 
     def get_target(self, t, state):
         """Compute (x, y, z) for time t given current PerceptionState.
@@ -40,22 +46,23 @@ class ParametricMotionGenerator:
             (x, y, z) tuple in arm mm coordinates
         """
         cfg = self.cfg
+        m = self._mode
         e = state.energy
 
-        # 1. Center position + attention offset
+        # 1. Center position + attention offset + mode Z offset
         cx = cfg.center[0] + state.attention_x * cfg.attention_range_x[1]
         cy = cfg.center[1] + state.attention_y * cfg.attention_range_y[1]
-        cz = cfg.center[2]
+        cz = cfg.center[2] + m["center_z_offset"]
 
-        # 2. Amplitude: lerp between low (dormant) and high (excited)
-        amp_x = _lerp(cfg.amplitude_low[0], cfg.amplitude_high[0], e)
-        amp_y = _lerp(cfg.amplitude_low[1], cfg.amplitude_high[1], e)
-        amp_z = _lerp(cfg.amplitude_low[2], cfg.amplitude_high[2], e)
+        # 2. Amplitude: lerp between low/high, then apply mode multiplier
+        amp_x = _lerp(cfg.amplitude_low[0], cfg.amplitude_high[0], e) * m["amp_mult"]
+        amp_y = _lerp(cfg.amplitude_low[1], cfg.amplitude_high[1], e) * m["amp_mult"]
+        amp_z = _lerp(cfg.amplitude_low[2], cfg.amplitude_high[2], e) * m["amp_mult"]
 
-        # 3. Frequency: lerp between slow and fast
-        freq_x = _lerp(cfg.frequency_low[0], cfg.frequency_high[0], e)
-        freq_y = _lerp(cfg.frequency_low[1], cfg.frequency_high[1], e)
-        freq_z = _lerp(cfg.frequency_low[2], cfg.frequency_high[2], e)
+        # 3. Frequency: lerp between slow/fast, then apply mode multiplier
+        freq_x = _lerp(cfg.frequency_low[0], cfg.frequency_high[0], e) * m["freq_mult"]
+        freq_y = _lerp(cfg.frequency_low[1], cfg.frequency_high[1], e) * m["freq_mult"]
+        freq_z = _lerp(cfg.frequency_low[2], cfg.frequency_high[2], e) * m["freq_mult"]
 
         # 4. Primary oscillation (base Lissajous-like pattern)
         #    Use slightly different phase relationships to avoid straight-line motion
@@ -101,16 +108,20 @@ class ParametricMotionGenerator:
             "playful_mod": round(playful, 2),
             "jitter_active": jitter_active,
             "jitter_amp": round(jitter_amp, 1),
+            "mode_amp_mult": round(m["amp_mult"], 2),
+            "mode_freq_mult": round(m["freq_mult"], 2),
+            "mode_speed_mult": round(m["speed_mult"], 2),
         }
 
         return x, y, z
 
     def get_speed(self, state):
-        """Compute arm speed (mm/s) from energy level."""
+        """Compute arm speed (mm/s) from energy level, scaled by mode."""
         cfg = self.cfg
         mult = _lerp(cfg.speed_energy_mult[0], cfg.speed_energy_mult[1], state.energy)
-        self._debug["speed_mult"] = round(mult, 2)
-        return cfg.speed_base * mult
+        mode_mult = self._mode["speed_mult"]
+        self._debug["speed_mult"] = round(mult * mode_mult, 2)
+        return cfg.speed_base * mult * mode_mult
 
     def get_debug_state(self):
         """Return last-computed motion debug state."""

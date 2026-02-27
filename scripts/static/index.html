@@ -361,11 +361,12 @@
     background: #23863626;
     color: var(--green);
   }
-  .mode-badge.DRINKING { background: #f8514926; color: var(--red); }
-  .mode-badge.WAVING { background: #3fb95026; color: var(--green); }
-  .mode-badge.LEANING { background: #d2992226; color: var(--orange); }
-  .mode-badge.POINTING { background: #bc8cff26; color: var(--purple); }
-  .mode-badge.RESTING { background: #388bfd26; color: var(--accent); }
+  .mode-badge.CALM { background: #30363d; color: var(--text-dim); }
+  .mode-badge.ALERT { background: #388bfd26; color: var(--accent); }
+  .mode-badge.EXCITED { background: #f8514926; color: var(--red); }
+  .mode-badge.PLAYFUL { background: #bc8cff26; color: var(--purple); }
+  .mode-badge.TENSE { background: #d2992226; color: var(--orange); }
+  .mode-badge.DORMANT { background: #21262d; color: #484f58; }
   .mode-badge.IDLE { background: #30363d; color: var(--text-dim); }
 
   .mode-transition-arrow {
@@ -555,6 +556,8 @@
           <span class="flag-label">playful</span>
           <span class="flag-dot" id="flagJitter" title="Urgency jitter"></span>
           <span class="flag-label">jitter</span>
+          <span class="flag-dot" id="flagModeMult" title="Mode multipliers active"></span>
+          <span class="flag-label" id="modeMultLabel">mode 1.0x</span>
           <span class="speed-mult" id="dbgSpeedMult">1.0x</span>
         </div>
       </div>
@@ -599,7 +602,7 @@
       <div class="mode-section">
         <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Current Mode</div>
         <div class="mode-current">
-          <span class="mode-badge IDLE" id="modeBadge">IDLE</span>
+          <span class="mode-badge CALM" id="modeBadge">CALM</span>
           <span class="mode-transition-arrow" id="modeTransitionArrow"></span>
         </div>
         <div class="mode-transition-detail" id="modeTransitionDetail">No transitions yet</div>
@@ -731,6 +734,15 @@ function handleState(msg) {
       d.jitter_active ? 'var(--red)' : 'var(--border)';
 
     document.getElementById('dbgSpeedMult').textContent = (d.speed_mult || 1).toFixed(1) + 'x';
+
+    // Mode multiplier indicators
+    const mAmp = d.mode_amp_mult || 1;
+    const mFreq = d.mode_freq_mult || 1;
+    document.getElementById('flagModeMult').style.background =
+      (mAmp > 1.1 || mFreq > 1.1) ? 'var(--green)' :
+      (mAmp < 0.9 || mFreq < 0.9) ? 'var(--orange)' : 'var(--border)';
+    document.getElementById('modeMultLabel').textContent =
+      `amp ${mAmp.toFixed(1)}x freq ${mFreq.toFixed(1)}x`;
   }
 
   // Arm telemetry
@@ -816,14 +828,14 @@ function updateMode(currentMode, modeHistory) {
   if (modeHistory && modeHistory.length > 0) {
     const last = modeHistory[modeHistory.length - 1];
     arrow.textContent = last.from_mode + ' \u2192';
-    detail.textContent = `"${last.action}" (conf ${last.confidence})`;
+    detail.textContent = `triggers: ${last.action}`;
 
     // Show last 5 transitions
     const container = document.getElementById('modeHistory');
     const recent = modeHistory.slice(-5).reverse();
     container.innerHTML = recent.map(h => {
       const t = new Date(h.time * 1000).toLocaleTimeString('en-US', { hour12: false });
-      return `<div class="mode-history-entry"><span class="mh-time">${t}</span><span class="mh-arrow">${h.from_mode} \u2192 ${h.to_mode}</span><span class="mh-action">${h.action} (${h.confidence})</span></div>`;
+      return `<div class="mode-history-entry"><span class="mh-time">${t}</span><span class="mh-arrow">${h.from_mode} \u2192 ${h.to_mode}</span><span class="mh-action">${h.action}</span></div>`;
     }).join('');
   } else {
     arrow.textContent = '';
