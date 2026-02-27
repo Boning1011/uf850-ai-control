@@ -184,6 +184,9 @@ def main():
         ctrl.move_to_center()
         time.sleep(0.5)
 
+        # Switch to servo mode for real-time streaming control
+        ctrl.enable_servo()
+
         if args.keyboard:
             # Keyboard mode: no camera, no VLM
             # Still push mock frames so dashboard camera panel shows something
@@ -323,16 +326,14 @@ def main():
             mode_engine.update(trigger_engine.active_triggers)
             motion_gen.set_mode(mode_engine.current_mode)
 
-            # Flush arm command queue on mode switch for instant transition
-            if mode_engine.mode_just_changed:
-                ctrl.flush_queue()
-                mode_engine.mode_just_changed = False
+            # In servo mode, no queue flush needed — velocity clamping handles transitions
+            mode_engine.mode_just_changed = False
 
             state = state_holder.get()
             x, y, z, pitch = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
 
-            ret = ctrl.send_position(x, y, z, speed=speed, pitch=pitch)
+            ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, dt=DT)
             if ret == -2:
                 time.sleep(0.2)
                 continue

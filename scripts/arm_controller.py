@@ -5,6 +5,7 @@ Handles connection, error recovery, position safety clamping, and command queue 
 """
 
 import atexit
+import math
 import os
 import sys
 import time
@@ -77,6 +78,8 @@ class ArmController:
         self.recovering = threading.Lock()
         self.error_count = 0
         self.running = True
+        self._servo_mode = False
+        self._last_servo_pos = None  # [x, y, z, roll, pitch, yaw]
 
     def connect(self):
         self.arm = XArmAPI(self.ip, is_radian=False)
@@ -163,9 +166,98 @@ class ArmController:
         self.arm.set_position(cx, cy, cz, r, p, w, speed=speed, wait=True)
 
     def flush_queue(self):
+        if self._servo_mode:
+            return  # no command queue in servo mode
         self.arm.set_state(4)
         self.arm.set_mode(0)
         self.arm.set_state(0)
+
+    # ---------- servo mode (Mode 1) ----------
+
+    def enable_servo(self):
+        """Switch to servo mode (Mode 1). Call after move_to_center()."""
+        self.arm.set_mode(1)
+        self.arm.set_state(0)
+        self._seed_servo_pos()
+        self._servo_mode = True
+        print("[ARM] Servo mode enabled")
+
+    def _seed_servo_pos(self):
+        """Read current arm position as servo starting point."""
+        code, pos = self.arm.get_position()
+        if code == 0:
+            self._last_servo_pos = list(pos[:6])
+        else:
+            r, p, w = self.rpy
+            cx, cy, cz = self.center
+            self._last_servo_pos = [cx, cy, cz, r, p, w]
+
+    def send_servo(self, x, y, z, speed=None, pitch=None, dt=0.04):
+        """Send velocity-clamped servo command.
+
+        Speed is used for velocity clamping: max_mm_per_frame = speed * dt.
+        This means the existing speed/boost system maps directly to how fast
+        the arm actually moves in servo mode.
+
+        Args:
+            x, y, z: target position in mm
+            speed: desired speed in mm/s (for velocity clamping)
+            pitch: tool pitch in degrees (default: from self.rpy[1])
+            dt: control loop timestep in seconds
+        Returns:
+            SDK return code
+        """
+        x, y, z = self.clamp_position(x, y, z)
+        r, p, w = self.rpy
+        if pitch is not None:
+            p = pitch
+
+        target = [x, y, z, r, p, w]
+
+        if self._last_servo_pos is None:
+            self._seed_servo_pos()
+
+        # Velocity limits from speed
+        spd = speed if speed is not None else self.speed
+        max_mm = spd * dt
+        max_deg = spd * dt * 0.3  # rotation scaling (conservative)
+
+        clamped = self._velocity_clamp(self._last_servo_pos, target, max_mm, max_deg)
+        ret = self.arm.set_servo_cartesian(clamped, is_radian=False)
+        if ret == 0:
+            self._last_servo_pos = list(clamped)
+        return ret
+
+    def _velocity_clamp(self, current, target, max_mm, max_deg):
+        """Clamp step from current to target within per-frame limits.
+
+        Position (XYZ): clamp Euclidean distance to max_mm.
+        Rotation (RPY): clamp each axis independently to max_deg.
+        """
+        result = list(target)
+
+        # Position — Euclidean clamp
+        dx = target[0] - current[0]
+        dy = target[1] - current[1]
+        dz = target[2] - current[2]
+        dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+
+        if dist > max_mm and dist > 0:
+            scale = max_mm / dist
+            result[0] = current[0] + dx * scale
+            result[1] = current[1] + dy * scale
+            result[2] = current[2] + dz * scale
+
+        # Rotation — per-axis clamp with angle wrapping
+        for i in range(3, 6):
+            delta = target[i] - current[i]
+            # Normalize to [-180, 180] to avoid wrapping issues (e.g. -180 vs +180)
+            delta = (delta + 180) % 360 - 180
+            if abs(delta) > max_deg:
+                delta = max_deg * (1 if delta > 0 else -1)
+            result[i] = current[i] + delta
+
+        return result
 
     def _print_position(self):
         pos = self.get_xyz()
@@ -195,10 +287,19 @@ class ArmController:
             self.arm.clean_error()
             self.arm.clean_warn()
             self.arm.motion_enable(enable=True)
+            # Move to center in Mode 0 (blocking, safe)
             self.arm.set_mode(0)
             self.arm.set_state(0)
-            time.sleep(0.2)
+            time.sleep(0.5)
             self.move_to_center(speed=60)
+            time.sleep(0.3)
+            # Restore servo mode if it was active
+            if self._servo_mode:
+                self.arm.clean_error()
+                self.arm.set_mode(1)
+                self.arm.set_state(0)
+                time.sleep(0.2)
+                self._seed_servo_pos()
             print(f"[RECOVER] OK -> center (total: {self.error_count})")
         except Exception as e:
             print(f"[RECOVER] partial ({e}), total: {self.error_count}")
