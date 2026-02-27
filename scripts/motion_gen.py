@@ -1,11 +1,20 @@
 """
-Parameterized Motion Generator — continuous PerceptionState drives sinusoidal XYZ motion.
+Parameterized Motion Generator v2 — per-mode distinct motion patterns.
 
-Replaces discrete pattern_idle/curious/alert/dance with a single parameterized function
-whose amplitude, frequency, center, and harmonic content are modulated by 6 continuous floats.
+Each mode has its own motion generator producing qualitatively different movement:
+  CALM:     gentle breathing at center (small sinusoidal oscillation)
+  ALERT:    reach far forward toward attention (arm stretches to max X)
+  EXCITED:  big dramatic sweeping arcs (full workspace lissajous)
+  PLAYFUL:  extend forward + rapid J5 pitch oscillation (head nod)
+  TENSE:    reach high on Z axis (stretch up, small trembling)
+  DORMANT:  contracted low, barely moving (sleeping)
+
+Mode transitions are instant — no blending. Arm snaps to new pattern
+with a speed boost during the first 0.8 seconds after switch.
 """
 
 import math
+import time
 
 
 def _lerp(a, b, t):
@@ -13,116 +22,257 @@ def _lerp(a, b, t):
     return a + (b - a) * t
 
 
-class ParametricMotionGenerator:
-    """Generate XYZ targets from continuous behavioral parameters + time.
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
 
-    The motion is a sum of sinusoids whose amplitude and frequency are
-    continuously modulated by PerceptionState. This means:
-    - energy=0: tiny, slow breathing oscillation (like idle)
-    - energy=1: large, fast sweeping arcs (like dance)
-    - attention shifts the orbit center
-    - mood modulates harmonic content (tense = jerky, playful = smooth)
-    - urgency adds temporary startle jitter
+
+class ParametricMotionGenerator:
+    """Generate (x, y, z, pitch) targets from mode + continuous state + time.
+
+    Each mode is a distinct motion pattern, not just scaled multipliers.
+    Returns pitch for J5 control (default 0 = tool pointing down with roll=180).
     """
+
+    # Speed (mm/s) per mode: (normal, transition_boost)
+    MODE_SPEEDS = {
+        "CALM":     (120, 600),
+        "ALERT":    (200, 700),
+        "EXCITED":  (500, 800),
+        "PLAYFUL":  (250, 700),
+        "TENSE":    (180, 700),
+        "DORMANT":  (50, 400),
+    }
+
+    TRANSITION_BOOST_DURATION = 0.8  # seconds of high speed after mode switch
 
     def __init__(self, persona_config):
         self.cfg = persona_config
-        self._debug = {}  # cached debug state from last get_target call
-        # Mode multipliers (set by ModeEngine via set_mode_params)
-        self._mode = {"amp_mult": 1.0, "freq_mult": 1.0, "speed_mult": 1.0, "center_z_offset": 0}
+        self._mode = "CALM"
+        self._mode_switch_time = 0.0
+        self._debug = {}
 
-    def set_mode_params(self, params):
-        """Apply mode multipliers from ModeEngine."""
-        self._mode = params
+    def set_mode(self, mode_name):
+        """Switch to a new mode. Resets transition timer for speed boost."""
+        if mode_name != self._mode:
+            self._mode = mode_name
+            self._mode_switch_time = time.monotonic()
+
+    @property
+    def current_mode(self):
+        return self._mode
 
     def get_target(self, t, state):
-        """Compute (x, y, z) for time t given current PerceptionState.
+        """Compute (x, y, z, pitch) for current mode.
 
         Args:
-            t: elapsed time in seconds (monotonic, drives oscillation phase)
+            t: elapsed time in seconds (monotonic phase driver)
             state: PerceptionState with continuous parameters
 
         Returns:
-            (x, y, z) tuple in arm mm coordinates
+            (x, y, z, pitch) — x/y/z in arm mm, pitch in degrees
         """
+        method = getattr(self, f'_motion_{self._mode.lower()}', self._motion_calm)
+        x, y, z, pitch = method(t, state)
+
+        # Safety clamp position (pitch not clamped here — arm_controller handles RPY)
         cfg = self.cfg
-        m = self._mode
-        e = state.energy
+        x = _clamp(x, cfg.bounds_x[0], cfg.bounds_x[1])
+        y = _clamp(y, cfg.bounds_y[0], cfg.bounds_y[1])
+        z = _clamp(z, cfg.bounds_z[0], cfg.bounds_z[1])
 
-        # 1. Center position + attention offset + mode Z offset
-        cx = cfg.center[0] + state.attention_x * cfg.attention_range_x[1]
-        cy = cfg.center[1] + state.attention_y * cfg.attention_range_y[1]
-        cz = cfg.center[2] + m["center_z_offset"]
+        self._debug["mode"] = self._mode
+        self._debug["target_xyz"] = [round(x, 1), round(y, 1), round(z, 1)]
+        self._debug["pitch"] = round(pitch, 1)
 
-        # 2. Amplitude: lerp between low/high, then apply mode multiplier
-        amp_x = _lerp(cfg.amplitude_low[0], cfg.amplitude_high[0], e) * m["amp_mult"]
-        amp_y = _lerp(cfg.amplitude_low[1], cfg.amplitude_high[1], e) * m["amp_mult"]
-        amp_z = _lerp(cfg.amplitude_low[2], cfg.amplitude_high[2], e) * m["amp_mult"]
-
-        # 3. Frequency: lerp between slow/fast, then apply mode multiplier
-        freq_x = _lerp(cfg.frequency_low[0], cfg.frequency_high[0], e) * m["freq_mult"]
-        freq_y = _lerp(cfg.frequency_low[1], cfg.frequency_high[1], e) * m["freq_mult"]
-        freq_z = _lerp(cfg.frequency_low[2], cfg.frequency_high[2], e) * m["freq_mult"]
-
-        # 4. Primary oscillation (base Lissajous-like pattern)
-        #    Use slightly different phase relationships to avoid straight-line motion
-        phase_x = 2 * math.pi * freq_x * t
-        phase_y = 2 * math.pi * freq_y * t
-        phase_z = 2 * math.pi * freq_z * t
-
-        x = cx + amp_x * math.sin(phase_x)
-        y = cy + amp_y * math.sin(phase_y * 1.1)  # slight detuning for organic feel
-        z = cz + amp_z * math.sin(phase_z * 0.7)
-
-        # 5. Mood modulates harmonic content
-        #    mood=0 (tense): sharp higher harmonics → jerky motion
-        #    mood=1 (playful): gentle secondary → flowing motion
-        tense = 1.0 - state.mood  # 0 = relaxed, 1 = tense
-        harmonic = tense * 0.3
-        x += harmonic * amp_x * 0.4 * math.sin(3.7 * phase_x)
-        y += harmonic * amp_y * 0.3 * math.sin(2.3 * phase_y)
-        z += harmonic * amp_z * 0.3 * math.sin(4.1 * phase_z)
-
-        # Playful: add gentle secondary oscillation
-        playful = state.mood * 0.2
-        x += playful * amp_x * 0.3 * math.sin(0.37 * phase_x + 1.2)
-        y += playful * amp_y * 0.4 * math.sin(0.53 * phase_y + 0.8)
-
-        # 6. Urgency: temporary startle jitter
-        jitter_active = state.urgency > 0.3
-        jitter_amp = state.urgency * 15 if jitter_active else 0
-        if jitter_active:
-            x += jitter_amp * math.sin(2 * math.pi * 8.0 * t)
-            z += jitter_amp * math.cos(2 * math.pi * 7.3 * t)
-
-        # Cache debug info (cheap dict assignment, no extra math)
-        self._debug = {
-            "amp": [round(amp_x, 1), round(amp_y, 1), round(amp_z, 1)],
-            "freq": [round(freq_x, 3), round(freq_y, 3), round(freq_z, 3)],
-            "phase": [
-                round((phase_x % (2 * math.pi)) / (2 * math.pi), 2),
-                round((phase_y % (2 * math.pi)) / (2 * math.pi), 2),
-                round((phase_z % (2 * math.pi)) / (2 * math.pi), 2),
-            ],
-            "mood_harmonic": round(harmonic, 2),
-            "playful_mod": round(playful, 2),
-            "jitter_active": jitter_active,
-            "jitter_amp": round(jitter_amp, 1),
-            "mode_amp_mult": round(m["amp_mult"], 2),
-            "mode_freq_mult": round(m["freq_mult"], 2),
-            "mode_speed_mult": round(m["speed_mult"], 2),
-        }
-
-        return x, y, z
+        return x, y, z, pitch
 
     def get_speed(self, state):
-        """Compute arm speed (mm/s) from energy level, scaled by mode."""
-        cfg = self.cfg
-        mult = _lerp(cfg.speed_energy_mult[0], cfg.speed_energy_mult[1], state.energy)
-        mode_mult = self._mode["speed_mult"]
-        self._debug["speed_mult"] = round(mult * mode_mult, 2)
-        return cfg.speed_base * mult * mode_mult
+        """Compute arm speed (mm/s). Uses transition boost after mode switch."""
+        normal_speed, boost_speed = self.MODE_SPEEDS.get(
+            self._mode, (150, 600)
+        )
+
+        # Transition boost: high speed right after mode switch
+        elapsed = time.monotonic() - self._mode_switch_time
+        if elapsed < self.TRANSITION_BOOST_DURATION:
+            # Fast linear ramp-down from boost to normal
+            blend = elapsed / self.TRANSITION_BOOST_DURATION
+            speed = _lerp(boost_speed, normal_speed, blend)
+        else:
+            speed = normal_speed
+
+        # Energy also modulates speed (subtle, ±30%)
+        energy_mult = _lerp(0.7, 1.3, state.energy)
+        speed *= energy_mult
+
+        self._debug["speed"] = round(speed, 1)
+        self._debug["transition_boost"] = elapsed < self.TRANSITION_BOOST_DURATION
+        return speed
 
     def get_debug_state(self):
         """Return last-computed motion debug state."""
         return self._debug.copy() if self._debug else {}
+
+    # ------------------------------------------------------------------
+    # Mode-specific motion generators
+    # Each returns (x, y, z, pitch)
+    # ------------------------------------------------------------------
+
+    def _motion_calm(self, t, state):
+        """Gentle breathing oscillation around center. Small, slow, peaceful."""
+        cfg = self.cfg
+        cx, cy, cz = cfg.center
+
+        # Attention shifts center slightly
+        cx += state.attention_x * cfg.attention_range_x[1] * 0.5
+        cy += state.attention_y * cfg.attention_range_y[1] * 0.5
+
+        # Small breathing: ±25mm X, ±15mm Y, ±30mm Z
+        amp_x, amp_y, amp_z = 25, 15, 30
+        freq = 0.15  # slow breathing ~6.7s cycle
+
+        x = cx + amp_x * math.sin(2 * math.pi * freq * t)
+        y = cy + amp_y * math.sin(2 * math.pi * freq * t * 1.3 + 0.5)
+        z = cz + amp_z * math.sin(2 * math.pi * freq * t * 0.7)
+
+        self._debug["pattern"] = "breathing"
+        self._debug["amp"] = [amp_x, amp_y, amp_z]
+        self._debug["freq"] = round(freq, 3)
+
+        return x, y, z, 0
+
+    def _motion_alert(self, t, state):
+        """Reach far forward — arm stretches to max X, slowly sweeping Y.
+
+        Like a creature stretching toward something interesting.
+        """
+        cfg = self.cfg
+
+        # Target: far forward, center height
+        # Reach toward attention direction
+        target_x = cfg.bounds_x[1]  # max X — full reach
+        target_y = state.attention_y * cfg.bounds_y[1] * 0.8  # follow attention in Y
+        target_z = cfg.center[2]  # center height
+
+        # Slow sweep while extended: ±40mm Y, ±20mm Z
+        sweep_freq = 0.2
+        y_sweep = 40 * math.sin(2 * math.pi * sweep_freq * t)
+        z_breathe = 20 * math.sin(2 * math.pi * sweep_freq * t * 0.6 + 1.0)
+
+        x = target_x
+        y = target_y + y_sweep
+        z = target_z + z_breathe
+
+        self._debug["pattern"] = "reach_forward"
+        self._debug["reach_x"] = round(target_x, 1)
+
+        return x, y, z, 0
+
+    def _motion_excited(self, t, state):
+        """Big dramatic sweeping arcs — full workspace lissajous.
+
+        Fast, large, covering the entire reachable space.
+        """
+        cfg = self.cfg
+        cx, cy, cz = cfg.center
+
+        # Use near-full bounds for dramatic sweeps
+        range_x = (cfg.bounds_x[1] - cfg.bounds_x[0]) * 0.45
+        range_y = (cfg.bounds_y[1] - cfg.bounds_y[0]) * 0.45
+        range_z = (cfg.bounds_z[1] - cfg.bounds_z[0]) * 0.35
+
+        # Fast lissajous with irrational frequency ratios for non-repeating paths
+        freq_base = 0.4  # ~2.5s per cycle
+        x = cx + range_x * math.sin(2 * math.pi * freq_base * t)
+        y = cy + range_y * math.sin(2 * math.pi * freq_base * t * 1.618)  # golden ratio
+        z = cz + range_z * math.sin(2 * math.pi * freq_base * t * 0.713 + 0.3)
+
+        # Add energy modulation: higher energy = faster
+        energy_freq = _lerp(0.8, 1.5, state.energy)
+        x += 30 * math.sin(2 * math.pi * freq_base * energy_freq * t * 2.1)
+        z += 25 * math.sin(2 * math.pi * freq_base * energy_freq * t * 1.7)
+
+        self._debug["pattern"] = "big_sweep"
+        self._debug["range"] = [round(range_x, 1), round(range_y, 1), round(range_z, 1)]
+        self._debug["freq_base"] = round(freq_base, 3)
+
+        return x, y, z, 0
+
+    def _motion_playful(self, t, state):
+        """Extend forward + rapid J5 pitch oscillation (head nod).
+
+        Arm reaches out, then the 'head' (J5) nods rapidly — like a curious
+        creature bobbing its head.
+        """
+        cfg = self.cfg
+
+        # Position: extended forward, small oscillation
+        target_x = cfg.bounds_x[1] * 0.85  # ~85% of max reach
+        target_y = 0
+        target_z = cfg.center[2] + 50  # slightly above center
+
+        # Small position wobble to keep it organic
+        wobble_freq = 0.25
+        x = target_x + 15 * math.sin(2 * math.pi * wobble_freq * t)
+        y = target_y + 20 * math.sin(2 * math.pi * wobble_freq * t * 1.4 + 0.7)
+        z = target_z + 10 * math.sin(2 * math.pi * wobble_freq * t * 0.8)
+
+        # J5 pitch: rapid oscillation ±35 degrees
+        pitch_freq = 1.5  # fast nod ~1.5 Hz
+        pitch = 35 * math.sin(2 * math.pi * pitch_freq * t)
+
+        # Add a slower secondary pitch to vary the pattern
+        pitch += 10 * math.sin(2 * math.pi * 0.3 * t + 1.5)
+
+        self._debug["pattern"] = "head_nod"
+        self._debug["pitch_freq"] = round(pitch_freq, 2)
+        self._debug["pitch_amp"] = 35
+
+        return x, y, z, pitch
+
+    def _motion_tense(self, t, state):
+        """Reach high on Z axis — arm stretches up, small rapid trembling.
+
+        Like a creature standing tall, alert and shaking slightly.
+        """
+        cfg = self.cfg
+
+        # Target: close to base (for stability), very high Z
+        target_x = cfg.center[0] * 0.7  # closer to base
+        target_y = 0
+        target_z = cfg.bounds_z[1] * 0.85  # ~85% of max height
+
+        # Small rapid trembling at the top
+        tremble_freq = 3.0  # fast shaking
+        tremble_amp = 8  # small amplitude
+
+        x = target_x + tremble_amp * math.sin(2 * math.pi * tremble_freq * t)
+        y = target_y + tremble_amp * math.sin(2 * math.pi * tremble_freq * t * 1.3 + 0.4)
+        z = target_z + tremble_amp * 0.5 * math.sin(2 * math.pi * tremble_freq * t * 0.9)
+
+        self._debug["pattern"] = "reach_high"
+        self._debug["target_z"] = round(target_z, 1)
+
+        return x, y, z, 0
+
+    def _motion_dormant(self, t, state):
+        """Contracted, low, barely moving — sleeping posture.
+
+        Arm curls in close to base, very low, occasional tiny movement.
+        """
+        cfg = self.cfg
+
+        # Low, close, contracted
+        target_x = cfg.bounds_x[0] + 50  # close to min X
+        target_y = 0
+        target_z = cfg.bounds_z[0] + 30  # near floor
+
+        # Barely perceptible breathing
+        breathe_freq = 0.08  # very slow ~12.5s cycle
+        x = target_x + 5 * math.sin(2 * math.pi * breathe_freq * t)
+        y = target_y + 3 * math.sin(2 * math.pi * breathe_freq * t * 1.1)
+        z = target_z + 8 * math.sin(2 * math.pi * breathe_freq * t * 0.7)
+
+        self._debug["pattern"] = "sleeping"
+
+        return x, y, z, 0

@@ -88,26 +88,18 @@ class TriggerEngine:
 
 
 class ModeEngine:
-    """Maps active triggers to a motion mode with smooth parameter blending.
+    """Maps active triggers to a motion mode — instant switching, no blending.
 
-    Each mode provides multipliers (amp, freq, speed) and a center Z offset
-    that are applied to the parametric motion generator. Transitions between
-    modes are smoothed via exponential interpolation.
+    Mode transitions are immediate. The motion generator handles each mode
+    as a completely distinct pattern. A `mode_just_changed` flag tells the
+    main loop to flush the arm command queue for a snappy transition.
     """
 
-    # Mode parameters: multipliers applied to base parametric motion
-    MODE_PARAMS = {
-        "CALM":     {"amp_mult": 1.0, "freq_mult": 1.0, "speed_mult": 1.0, "center_z_offset": 0},
-        "ALERT":    {"amp_mult": 1.5, "freq_mult": 1.2, "speed_mult": 1.4, "center_z_offset": 30},
-        "EXCITED":  {"amp_mult": 2.5, "freq_mult": 1.8, "speed_mult": 2.5, "center_z_offset": 50},
-        "PLAYFUL":  {"amp_mult": 2.0, "freq_mult": 0.8, "speed_mult": 1.5, "center_z_offset": 20},
-        "TENSE":    {"amp_mult": 1.3, "freq_mult": 2.0, "speed_mult": 1.8, "center_z_offset": -20},
-        "DORMANT":  {"amp_mult": 0.3, "freq_mult": 0.5, "speed_mult": 0.4, "center_z_offset": -40},
-    }
+    VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT"}
 
     # Priority-ordered rules: first match wins (highest priority first)
     TRIGGER_RULES = [
-        ({"HIGH_ENERGY", "SUDDEN_MOVEMENT"}, "EXCITED"),   # any of these
+        ({"HIGH_ENERGY", "SUDDEN_MOVEMENT"}, "EXCITED"),
         ({"HIGH_ENERGY"},                     "EXCITED"),
         ({"SUDDEN_MOVEMENT"},                 "EXCITED"),
         ({"PLAYFUL_MOOD"},                    "PLAYFUL"),
@@ -117,34 +109,26 @@ class ModeEngine:
         ({"HEAD_TURN_RIGHT"},                 "ALERT"),
         ({"LOOKING_UP"},                      "ALERT"),
         ({"LOOKING_DOWN"},                    "ALERT"),
-        ({"LOW_ENERGY", "LOW_PRESENCE"},      "DORMANT"),   # both required
+        ({"LOW_ENERGY", "LOW_PRESENCE"},      "DORMANT"),
     ]
 
-    def __init__(self, blend_speed=0.15):
-        """
-        Args:
-            blend_speed: exponential blend factor per update (0-1).
-                         Lower = smoother/slower transitions.
-        """
+    def __init__(self, **_kwargs):
         self.current_mode = "CALM"
-        self.blend_speed = blend_speed
-        # Current blended params (start at CALM)
-        self._current = dict(self.MODE_PARAMS["CALM"])
-        self._target = dict(self.MODE_PARAMS["CALM"])
+        self.mode_just_changed = False
 
-    def update(self, active_triggers: set) -> tuple[str, dict]:
-        """Determine mode from active triggers, blend params smoothly.
+    def update(self, active_triggers: set) -> tuple[str, str]:
+        """Determine mode from active triggers — instant switch.
 
         Args:
             active_triggers: set of trigger names currently active
 
         Returns:
-            (mode_name, blended_params_dict)
+            (old_mode, new_mode)
         """
         # Determine target mode (first matching rule wins)
         new_mode = "CALM"
         for required_triggers, mode in self.TRIGGER_RULES:
-            if required_triggers <= active_triggers:  # subset check
+            if required_triggers <= active_triggers:
                 new_mode = mode
                 break
 
@@ -153,12 +137,8 @@ class ModeEngine:
             new_mode = "DORMANT"
 
         old_mode = self.current_mode
+        if new_mode != old_mode:
+            self.mode_just_changed = True
         self.current_mode = new_mode
-        self._target = dict(self.MODE_PARAMS[new_mode])
 
-        # Exponential blend toward target
-        a = self.blend_speed
-        for key in self._current:
-            self._current[key] = self._current[key] * (1 - a) + self._target[key] * a
-
-        return old_mode, new_mode, dict(self._current)
+        return old_mode, new_mode

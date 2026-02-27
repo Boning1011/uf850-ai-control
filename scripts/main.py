@@ -130,7 +130,7 @@ def main():
     state_holder = StateHolder(smoothing=0.3)
     motion_gen = ParametricMotionGenerator(config)
     trigger_engine = TriggerEngine()
-    mode_engine = ModeEngine(blend_speed=0.15)
+    mode_engine = ModeEngine()
 
     # Init arm
     ctrl = ArmController(
@@ -240,10 +240,10 @@ def main():
                 newly_fired = trigger_engine.check(raw_state)
 
                 # Update mode from active triggers -> apply to motion generator
-                old_mode, new_mode, mode_params = mode_engine.update(
+                old_mode, new_mode = mode_engine.update(
                     trigger_engine.active_triggers
                 )
-                motion_gen.set_mode_params(mode_params)
+                motion_gen.set_mode(new_mode)
 
                 # Log mode transitions
                 if old_mode != new_mode:
@@ -260,7 +260,7 @@ def main():
                 if dashboard:
                     # Push state + motion debug
                     t_now = time.time()
-                    x, y, z = motion_gen.get_target(t_now, smoothed)
+                    x, y, z, _pitch = motion_gen.get_target(t_now, smoothed)
                     speed = motion_gen.get_speed(smoothed)
                     dashboard.push_state(
                         raw_state, smoothed,
@@ -319,15 +319,20 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # Keep blending mode params even between VLM calls (smooth transition)
+            # Check for mode changes (from VLM callback or keyboard triggers)
             mode_engine.update(trigger_engine.active_triggers)
-            motion_gen.set_mode_params(mode_engine._current)
+            motion_gen.set_mode(mode_engine.current_mode)
+
+            # Flush arm command queue on mode switch for instant transition
+            if mode_engine.mode_just_changed:
+                ctrl.flush_queue()
+                mode_engine.mode_just_changed = False
 
             state = state_holder.get()
-            x, y, z = motion_gen.get_target(t, state)
+            x, y, z, pitch = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
 
-            ret = ctrl.send_position(x, y, z, speed=speed)
+            ret = ctrl.send_position(x, y, z, speed=speed, pitch=pitch)
             if ret == -2:
                 time.sleep(0.2)
                 continue
@@ -336,10 +341,12 @@ def main():
                 vlm_info = ""
                 if perception:
                     vlm_info = f"  vlm#{perception.call_count}"
+                pitch_info = f" P={pitch:.0f}" if pitch != 0 else ""
                 print(f"  [{mode_engine.current_mode}] "
                       f"e={state.energy:.2f} m={state.mood:.2f} "
                       f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
-                      f"X={x:.0f} Y={y:.0f} Z={z:.0f} spd={speed:.0f}{vlm_info}")
+                      f"X={x:.0f} Y={y:.0f} Z={z:.0f}{pitch_info} "
+                      f"spd={speed:.0f}{vlm_info}")
 
                 # Push state to dashboard periodically (even without VLM updates)
                 if dashboard:

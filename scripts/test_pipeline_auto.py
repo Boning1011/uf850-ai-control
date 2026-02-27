@@ -233,7 +233,7 @@ def main():
 
                 # Compute motion target (simulated)
                 t_motion += vlm_interval
-                x, y, z = motion_gen.get_target(t_motion, smoothed)
+                x, y, z, _pitch = motion_gen.get_target(t_motion, smoothed)
                 speed = motion_gen.get_speed(smoothed)
 
                 # Log VLM result + motion

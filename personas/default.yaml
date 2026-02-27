@@ -60,9 +60,9 @@ motion:
   blend_duration: 0.5
 
 safety:
-  x: [100, 450]
-  y: [-150, 150]
-  z: [250, 950]
+  x: [100, 550]
+  y: [-200, 200]
+  z: [200, 850]
 
 camera:
   device: 0

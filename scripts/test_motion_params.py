@@ -148,10 +148,10 @@ def main():
                 continue
 
             state = state_holder.get()
-            x, y, z = motion_gen.get_target(t, state)
+            x, y, z, pitch = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
 
-            ret = ctrl.send_position(x, y, z, speed=speed)
+            ret = ctrl.send_position(x, y, z, speed=speed, pitch=pitch)
             if ret == -2:
                 time.sleep(0.2)
                 continue

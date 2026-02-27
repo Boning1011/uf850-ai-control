@@ -141,11 +141,20 @@ class ArmController:
         z = max(self.bounds_z[0], min(self.bounds_z[1], z))
         return x, y, z
 
-    def send_position(self, x, y, z, speed=None):
-        """Send a clamped position command. Returns SDK return code."""
+    def send_position(self, x, y, z, speed=None, pitch=None):
+        """Send a clamped position command. Returns SDK return code.
+
+        Args:
+            x, y, z: target position in mm
+            speed: mm/s (default: self.speed)
+            pitch: tool pitch in degrees (default: from self.rpy[1]).
+                   Used for J5 control — e.g. ±35° for head nod.
+        """
         x, y, z = self.clamp_position(x, y, z)
         spd = speed if speed is not None else self.speed
         r, p, w = self.rpy
+        if pitch is not None:
+            p = pitch
         return self.arm.set_position(x, y, z, r, p, w, speed=spd, wait=False)
 
     def move_to_center(self, speed=50):
