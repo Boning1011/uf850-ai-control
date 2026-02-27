@@ -169,17 +169,19 @@ class ParametricMotionGenerator:
         return x, y, z, 0
 
     def _motion_excited(self, t, state):
-        """Big dramatic sweeping arcs — full workspace lissajous.
+        """Big dramatic sweeping arcs — workspace lissajous.
 
-        Fast, large, covering the entire reachable space.
+        Fast, large, covering most of the reachable space. Amplitude is
+        reduced from full bounds to avoid joint-angle-limit errors at
+        extreme corner combinations (e.g. close-to-base + far-sideways).
         """
         cfg = self.cfg
         cx, cy, cz = cfg.center
 
-        # Use near-full bounds for dramatic sweeps
-        range_x = (cfg.bounds_x[1] - cfg.bounds_x[0]) * 0.45
-        range_y = (cfg.bounds_y[1] - cfg.bounds_y[0]) * 0.45
-        range_z = (cfg.bounds_z[1] - cfg.bounds_z[0]) * 0.35
+        # Reduced from 0.45/0.45/0.35 to avoid unreachable IK corners
+        range_x = (cfg.bounds_x[1] - cfg.bounds_x[0]) * 0.35
+        range_y = (cfg.bounds_y[1] - cfg.bounds_y[0]) * 0.30
+        range_z = (cfg.bounds_z[1] - cfg.bounds_z[0]) * 0.28
 
         # Fast lissajous with irrational frequency ratios for non-repeating paths
         freq_base = 0.4  # ~2.5s per cycle
@@ -189,8 +191,8 @@ class ParametricMotionGenerator:
 
         # Add energy modulation: higher energy = faster
         energy_freq = _lerp(0.8, 1.5, state.energy)
-        x += 30 * math.sin(2 * math.pi * freq_base * energy_freq * t * 2.1)
-        z += 25 * math.sin(2 * math.pi * freq_base * energy_freq * t * 1.7)
+        x += 20 * math.sin(2 * math.pi * freq_base * energy_freq * t * 2.1)
+        z += 18 * math.sin(2 * math.pi * freq_base * energy_freq * t * 1.7)
 
         self._debug["pattern"] = "big_sweep"
         self._debug["range"] = [round(range_x, 1), round(range_y, 1), round(range_z, 1)]

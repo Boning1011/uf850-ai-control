@@ -55,6 +55,7 @@ ERROR_NAMES = {
     21: "Kinematic Error", 22: "Self-Collision", 23: "Joint Angle Limit",
     24: "Speed Limit", 25: "Planning Error",
     31: "Collision (abnormal current)", 35: "Safety Boundary Limit",
+    60: "Servo Cartesian Out of Range",
 }
 
 
@@ -175,12 +176,50 @@ class ArmController:
     # ---------- servo mode (Mode 1) ----------
 
     def enable_servo(self):
-        """Switch to servo mode (Mode 1). Call after move_to_center()."""
-        self.arm.set_mode(1)
+        """Switch to servo mode (Mode 1). Call after move_to_center().
+
+        Retries up to 3 times if set_mode(1) fails (common after error recovery).
+        Returns True if servo mode confirmed, False otherwise.
+        """
+        # Clear any residual errors first
+        if self.arm.has_error:
+            self.arm.clean_error()
+            time.sleep(0.1)
+
+        for attempt in range(3):
+            ret = self.arm.set_mode(1)
+            if ret == 0:
+                break
+            print(f"[ARM] set_mode(1) failed (ret={ret}), retry {attempt + 1}/3",
+                  flush=True)
+            # Full reset cycle before retry
+            self.arm.clean_error()
+            self.arm.clean_warn()
+            self.arm.motion_enable(enable=True)
+            self.arm.set_mode(0)
+            self.arm.set_state(0)
+            time.sleep(0.5)
+
         self.arm.set_state(0)
+
+        # Wait for mode report to update (SDK reports asynchronously)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if self.arm.mode == 1:
+                break
+            time.sleep(0.05)
+
+        # Verify mode actually changed
+        if self.arm.mode != 1:
+            print(f"[ARM] WARNING: servo mode NOT confirmed (mode={self.arm.mode})",
+                  flush=True)
+            self._servo_mode = False
+            return False
+
         self._seed_servo_pos()
         self._servo_mode = True
         print("[ARM] Servo mode enabled")
+        return True
 
     def _seed_servo_pos(self):
         """Read current arm position as servo starting point."""
@@ -283,6 +322,7 @@ class ArmController:
             return
         try:
             self.error_count += 1
+            was_servo = self._servo_mode
             time.sleep(0.3)
             self.arm.clean_error()
             self.arm.clean_warn()
@@ -292,15 +332,17 @@ class ArmController:
             self.arm.set_state(0)
             time.sleep(0.5)
             self.move_to_center(speed=60)
-            time.sleep(0.3)
+            time.sleep(0.5)
             # Restore servo mode if it was active
-            if self._servo_mode:
-                self.arm.clean_error()
-                self.arm.set_mode(1)
-                self.arm.set_state(0)
-                time.sleep(0.2)
-                self._seed_servo_pos()
-            print(f"[RECOVER] OK -> center (total: {self.error_count})")
+            if was_servo:
+                ok = self.enable_servo()
+                if ok:
+                    print(f"[RECOVER] OK -> center + servo (total: {self.error_count})")
+                else:
+                    print(f"[RECOVER] OK -> center, servo FAILED (total: {self.error_count})",
+                          flush=True)
+            else:
+                print(f"[RECOVER] OK -> center (total: {self.error_count})")
         except Exception as e:
             print(f"[RECOVER] partial ({e}), total: {self.error_count}")
         finally:
