@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UF850 Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* Layout */
+  .dashboard {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .header {
+    background: var(--surface);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge {
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-badge.running { background: #238636; color: #fff; }
+  .status-badge.paused { background: #9e6a03; color: #fff; }
+  .status-badge.stopped { background: #da3633; color: #fff; }
+  .status-badge.connecting { background: #30363d; color: var(--text-dim); }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.pause { border-color: var(--orange); color: var(--orange); }
+  .btn.resume { border-color: var(--green); color: var(--green); }
+
+  .vlm-badge {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  /* Main content */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1px;
+    background: var(--border);
+    overflow: hidden;
+  }
+
+  /* Camera panel */
+  .camera-panel {
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .camera-panel img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .camera-offline {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* Right sidebar */
+  .sidebar {
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .section-title {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Parameter bars */
+  .params {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .param-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .param-label {
+    width: 80px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .param-bar-container {
+    flex: 1;
+    height: 16px;
+    background: #21262d;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* For bipolar params (attention_x, attention_y): center origin */
+  .param-bar-container.bipolar {
+    background: #21262d;
+  }
+  .param-bar-container.bipolar .param-bar-center {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: var(--border);
+  }
+
+  .param-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.15s ease, left 0.15s ease, background 0.15s ease;
+    min-width: 2px;
+  }
+
+  .param-value {
+    width: 42px;
+    font-size: 11px;
+    color: var(--text);
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Motion info */
+  .motion-info {
+    padding: 8px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .motion-info .label { color: var(--text-dim); }
+  .motion-info .value { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Active triggers */
+  .triggers-section {
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    min-height: 60px;
+  }
+
+  .trigger-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .trigger-chip {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #388bfd26;
+    color: var(--accent);
+    letter-spacing: 0.3px;
+  }
+  .trigger-chip.fired { background: #f8514926; color: var(--red); }
+  .no-triggers { color: var(--text-dim); font-size: 11px; font-style: italic; margin-top: 6px; }
+
+  /* Event log */
+  .log-section {
+    border-top: 1px solid var(--border);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .log-entries {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+    font-size: 11px;
+  }
+
+  .log-entry {
+    padding: 2px 12px;
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid #21262d;
+  }
+  .log-entry:hover { background: #161b2280; }
+
+  .log-time {
+    color: var(--text-dim);
+    flex-shrink: 0;
+    width: 55px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .log-type {
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+  }
+
+  .log-msg {
+    flex: 1;
+    word-break: break-word;
+  }
+
+  /* Bottom bar */
+  .footer {
+    background: var(--surface);
+    padding: 6px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .ws-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    display: inline-block;
+  }
+  .ws-indicator.connected { background: var(--green); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <!-- Header -->
+  <div class="header">
+    <h1>UF850 Dashboard</h1>
+    <span class="status-badge connecting" id="statusBadge">CONNECTING</span>
+    <div class="header-right">
+      <span class="vlm-badge" id="vlmBadge">VLM: --</span>
+      <button class="btn pause" id="btnPause" onclick="sendCommand('pause')">Pause VLM</button>
+      <button class="btn resume" id="btnResume" onclick="sendCommand('resume')" style="display:none">Resume VLM</button>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <!-- Camera feed -->
+    <div class="camera-panel">
+      <img id="cameraFeed" src="/video_feed" alt="Camera Feed"
+           onerror="this.style.display='none'; document.getElementById('cameraOffline').style.display='block'"
+           onload="this.style.display='block'; document.getElementById('cameraOffline').style.display='none'">
+      <div class="camera-offline" id="cameraOffline" style="display:none">Camera offline</div>
+    </div>
+
+    <!-- Right sidebar -->
+    <div class="sidebar">
+      <div class="section-title">VLM Parameters</div>
+      <div class="params" id="params">
+        <!-- Unipolar params: 0..1 -->
+        <div class="param-row" data-param="energy">
+          <span class="param-label">energy</span>
+          <div class="param-bar-container">
+            <div class="param-bar" style="width:0%;background:var(--green)"></div>
+          </div>
+          <span class="param-value">0.00</span>
+        </div>
+        <!-- Bipolar params: -1..1 -->
+        <div class="param-row" data-param="attention_x">
+          <span class="param-label">attention_x</span>
+          <div class="param-bar-container bipolar">
+            <div class="param-bar-center"></div>
+            <div class="param-bar" style="width:0%;left:50%;background:var(--accent)"></div>
+          </div>
+          <span class="param-value">0.00</span>
+        </div>
+        <div class="param-row" data-param="attention_y">
+          <span class="param-label">attention_y</span>
+          <div class="param-bar-container bipolar">
+            <div class="param-bar-center"></div>
+            <div class="param-bar" style="width:0%;left:50%;background:var(--accent)"></div>
+          </div>
+          <span class="param-value">0.00</span>
+        </div>
+        <div class="param-row" data-param="mood">
+          <span class="param-label">mood</span>
+          <div class="param-bar-container">
+            <div class="param-bar" style="width:50%;background:var(--purple)"></div>
+          </div>
+          <span class="param-value">0.50</span>
+        </div>
+        <div class="param-row" data-param="presence">
+          <span class="param-label">presence</span>
+          <div class="param-bar-container">
+            <div class="param-bar" style="width:0%;background:var(--orange)"></div>
+          </div>
+          <span class="param-value">0.00</span>
+        </div>
+        <div class="param-row" data-param="urgency">
+          <span class="param-label">urgency</span>
+          <div class="param-bar-container">
+            <div class="param-bar" style="width:0%;background:var(--red)"></div>
+          </div>
+          <span class="param-value">0.00</span>
+        </div>
+      </div>
+
+      <!-- Motion info -->
+      <div class="section-title">Motion</div>
+      <div class="motion-info" id="motionInfo">
+        <span class="label">X</span><span class="value" id="motionX">--</span>
+        <span class="label">Y</span><span class="value" id="motionY">--</span>
+        <span class="label">Z</span><span class="value" id="motionZ">--</span>
+        <span class="label">Speed</span><span class="value" id="motionSpeed">--</span>
+      </div>
+
+      <!-- Active triggers -->
+      <div class="triggers-section">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:2px">Active Triggers</div>
+        <div id="triggersContainer">
+          <div class="no-triggers" id="noTriggers">(none)</div>
+          <div class="trigger-chips" id="triggerChips"></div>
+        </div>
+      </div>
+
+      <!-- Event log -->
+      <div class="log-section">
+        <div class="section-title">Event Log</div>
+        <div class="log-entries" id="logEntries"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span><span class="ws-indicator" id="wsIndicator"></span> WebSocket</span>
+    <span id="footerInfo">--</span>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let ws = null;
+let reconnectTimer = null;
+const MAX_LOG_ENTRIES = 200;
+
+// Param colors
+const PARAM_COLORS = {
+  energy: 'var(--green)',
+  attention_x: 'var(--accent)',
+  attention_y: 'var(--accent)',
+  mood: 'var(--purple)',
+  presence: 'var(--orange)',
+  urgency: 'var(--red)',
+};
+
+const BIPOLAR_PARAMS = new Set(['attention_x', 'attention_y']);
+
+// ── WebSocket ──
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('wsIndicator').classList.add('connected');
+    document.getElementById('footerInfo').textContent = 'Connected';
+    if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsIndicator').classList.remove('connected');
+    document.getElementById('footerInfo').textContent = 'Disconnected — reconnecting...';
+    document.getElementById('statusBadge').textContent = 'OFFLINE';
+    document.getElementById('statusBadge').className = 'status-badge connecting';
+    if (!reconnectTimer) {
+      reconnectTimer = setInterval(connect, 3000);
+    }
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'state') handleState(msg);
+    else if (msg.type === 'event') handleEvent(msg);
+    else if (msg.type === 'init') handleInit(msg);
+  };
+}
+
+function sendCommand(cmd) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ command: cmd }));
+  }
+}
+
+// ── Handlers ──
+function handleInit(msg) {
+  // Replay event history
+  if (msg.events) {
+    msg.events.forEach(evt => addLogEntry(evt));
+  }
+}
+
+function handleState(msg) {
+  // Update status badge
+  const badge = document.getElementById('statusBadge');
+  const status = msg.status || 'running';
+  badge.textContent = status.toUpperCase();
+  badge.className = 'status-badge ' + status;
+
+  // Update pause/resume buttons
+  const isPaused = status === 'paused';
+  document.getElementById('btnPause').style.display = isPaused ? 'none' : '';
+  document.getElementById('btnResume').style.display = isPaused ? '' : 'none';
+
+  // Update VLM badge
+  const vlmBadge = document.getElementById('vlmBadge');
+  vlmBadge.textContent = `VLM: #${msg.vlm_count} (${msg.vlm_latency}s)`;
+
+  // Update param bars
+  const data = msg.smoothed;
+  if (data) {
+    for (const [key, value] of Object.entries(data)) {
+      updateParamBar(key, value);
+    }
+  }
+
+  // Update motion info
+  if (msg.motion) {
+    document.getElementById('motionX').textContent = msg.motion.x.toFixed(1);
+    document.getElementById('motionY').textContent = msg.motion.y.toFixed(1);
+    document.getElementById('motionZ').textContent = msg.motion.z.toFixed(1);
+    document.getElementById('motionSpeed').textContent = msg.motion.speed.toFixed(0) + ' mm/s';
+  }
+
+  // Update triggers
+  updateTriggers(msg.active_triggers || []);
+}
+
+function handleEvent(msg) {
+  addLogEntry(msg);
+}
+
+// ── UI Updates ──
+function updateParamBar(key, value) {
+  const row = document.querySelector(`[data-param="${key}"]`);
+  if (!row) return;
+
+  const bar = row.querySelector('.param-bar');
+  const valueEl = row.querySelector('.param-value');
+  const color = PARAM_COLORS[key] || 'var(--accent)';
+
+  if (BIPOLAR_PARAMS.has(key)) {
+    // Bipolar: -1..1, center at 50%
+    const pct = Math.abs(value) * 50;
+    if (value >= 0) {
+      bar.style.left = '50%';
+      bar.style.width = pct + '%';
+    } else {
+      bar.style.left = (50 - pct) + '%';
+      bar.style.width = pct + '%';
+    }
+    valueEl.textContent = (value >= 0 ? '+' : '') + value.toFixed(2);
+  } else {
+    // Unipolar: 0..1
+    bar.style.left = '0';
+    bar.style.width = (value * 100) + '%';
+    valueEl.textContent = value.toFixed(2);
+  }
+  bar.style.background = color;
+}
+
+function updateTriggers(triggers) {
+  const container = document.getElementById('triggerChips');
+  const noTriggers = document.getElementById('noTriggers');
+
+  if (triggers.length === 0) {
+    container.innerHTML = '';
+    noTriggers.style.display = '';
+    return;
+  }
+
+  noTriggers.style.display = 'none';
+  container.innerHTML = triggers.map(t =>
+    `<span class="trigger-chip">${t}</span>`
+  ).join('');
+}
+
+function addLogEntry(evt) {
+  const container = document.getElementById('logEntries');
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+
+  const ts = evt.timestamp ? new Date(evt.timestamp * 1000) : new Date();
+  const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
+
+  let icon = '';
+  let msgClass = '';
+  const evtType = evt.event || '';
+  if (evtType === 'FIRED') icon = '🔴';
+  else if (evtType === 'CLEARED') icon = '⚪';
+  else if (evtType === 'BIG_DELTA') icon = '📊';
+  else if (evtType === 'VLM') icon = '🔍';
+  else if (evtType.includes('ERROR')) icon = '❌';
+  else if (evtType === 'COMMAND') icon = '⚡';
+  else icon = '◦';
+
+  entry.innerHTML = `
+    <span class="log-time">${timeStr}</span>
+    <span class="log-type">${icon}</span>
+    <span class="log-msg"><b>${evtType}</b> ${evt.message || ''} ${evt.details || ''}</span>
+  `;
+
+  container.appendChild(entry);
+
+  // Trim old entries
+  while (container.children.length > MAX_LOG_ENTRIES) {
+    container.removeChild(container.firstChild);
+  }
+
+  // Auto-scroll
+  container.scrollTop = container.scrollHeight;
+}
+
+// ── Init ──
+connect();
+</script>
+</body>
+</html>

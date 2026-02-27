@@ -3,10 +3,18 @@ AI-Driven Arm Control — Full Pipeline
 
 Camera -> VLM Perception -> Continuous Parameters -> Parameterized Motion -> Arm
 
+Includes a web dashboard at http://localhost:7860 for real-time monitoring:
+  - Live camera feed (MJPEG)
+  - VLM parameter bars
+  - Trigger events
+  - Pipeline control (pause/resume VLM)
+
 Usage:
     python main.py --persona personas/default.yaml --ip 127.0.0.1
     python main.py --no-camera          # mock perception (no webcam)
     python main.py --keyboard           # manual parameter control (no VLM)
+    python main.py --no-web             # disable dashboard
+    python main.py --port 8080          # custom dashboard port
 """
 
 import argparse
@@ -23,6 +31,7 @@ from arm_controller import ArmController, acquire_lock
 from persona import PersonaConfig, PerceptionState, StateHolder
 from motion_gen import ParametricMotionGenerator
 from perception import GeminiProvider, FrameBuffer, CameraThread, PerceptionThread
+from triggers import TriggerEngine
 
 DT = 0.04  # 25 Hz
 
@@ -104,6 +113,10 @@ def main():
                         help="Manual parameter control instead of VLM")
     parser.add_argument("--no-camera", action="store_true",
                         help="Mock camera (gray frames) — VLM still runs but sees nothing")
+    parser.add_argument("--no-web", action="store_true",
+                        help="Disable web dashboard")
+    parser.add_argument("--port", type=int, default=7860,
+                        help="Web dashboard port (default: 7860)")
     args = parser.parse_args()
 
     acquire_lock()
@@ -116,6 +129,7 @@ def main():
     # Init shared state
     state_holder = StateHolder(smoothing=0.3)
     motion_gen = ParametricMotionGenerator(config)
+    trigger_engine = TriggerEngine()
 
     # Init arm
     ctrl = ArmController(
@@ -132,17 +146,54 @@ def main():
     # Perception components (unless keyboard mode)
     cam = None
     perception = None
-    frame_buffer = None
+    frame_buffer = FrameBuffer(maxlen=20)
     mock_thread_flag = [True]
+    dashboard = None
+
+    # Web dashboard
+    if not args.no_web:
+        from web_server import DashboardServer
+        dashboard = DashboardServer(
+            frame_buffer=frame_buffer,
+            state_holder=state_holder,
+            port=args.port,
+        )
+
+        def on_command(cmd):
+            if cmd == "pause" and perception:
+                perception.running = False
+                dashboard.set_status("paused")
+                dashboard.push_event("COMMAND", "VLM paused")
+                print("[Dashboard] VLM paused", flush=True)
+            elif cmd == "resume" and perception:
+                perception.running = True
+                dashboard.set_status("running")
+                dashboard.push_event("COMMAND", "VLM resumed")
+                print("[Dashboard] VLM resumed", flush=True)
+
+        dashboard.on_command = on_command
+        dashboard.start()
 
     try:
         ctrl.connect()
+        if dashboard:
+            dashboard.push_event("SYSTEM", "Arm connected", f"IP={args.ip}")
+
         print("\nMoving to center...")
         ctrl.move_to_center()
         time.sleep(0.5)
 
         if args.keyboard:
             # Keyboard mode: no camera, no VLM
+            # Still push mock frames so dashboard camera panel shows something
+            if dashboard:
+                mock_thread = threading.Thread(
+                    target=mock_camera_fill,
+                    args=(frame_buffer, lambda: mock_thread_flag[0]),
+                    daemon=True,
+                )
+                mock_thread.start()
+
             driver = threading.Thread(
                 target=keyboard_driver,
                 args=(state_holder, lambda: ctrl.running),
@@ -150,9 +201,10 @@ def main():
             )
             driver.start()
             print("Keyboard mode active.\n")
+            if dashboard:
+                dashboard.push_event("SYSTEM", "Keyboard mode active")
         else:
             # VLM mode: camera + perception
-            frame_buffer = FrameBuffer(maxlen=20)
             provider = GeminiProvider(model=config.vlm_model)
 
             if args.no_camera:
@@ -163,6 +215,8 @@ def main():
                 )
                 mock_thread.start()
                 print("[Camera] Mock mode.\n")
+                if dashboard:
+                    dashboard.push_event("SYSTEM", "Camera mock mode")
             else:
                 cam = CameraThread(
                     device=config.camera_device,
@@ -176,6 +230,39 @@ def main():
                     ctrl.disconnect()
                     sys.exit(1)
                 cam.start()
+                if dashboard:
+                    dashboard.push_event("SYSTEM", "Camera opened")
+
+            # VLM result callback -> dashboard + triggers
+            def on_vlm_result(raw_state, latency, call_count):
+                # Check triggers on raw (unsmoothed) state
+                newly_fired = trigger_engine.check(raw_state)
+                smoothed = state_holder.get()
+
+                if dashboard:
+                    # Push state
+                    t_now = time.time()
+                    x, y, z = motion_gen.get_target(t_now, smoothed)
+                    speed = motion_gen.get_speed(smoothed)
+                    dashboard.push_state(
+                        raw_state, smoothed,
+                        motion_xyz=(x, y, z), speed=speed,
+                        vlm_count=call_count, vlm_latency=latency,
+                    )
+                    dashboard.push_triggers(trigger_engine.active_triggers)
+
+                    # Push trigger events
+                    for name in newly_fired:
+                        dashboard.push_event(
+                            "FIRED", name,
+                            trigger_engine._state_summary(raw_state),
+                        )
+                    # Check for cleared triggers in recent history
+                    for ts, evt, name, details in trigger_engine.trigger_history[-10:]:
+                        if evt == "CLEARED" and ts > t_now - 1.0:
+                            dashboard.push_event("CLEARED", name, details)
+                        elif evt == "BIG_DELTA" and ts > t_now - 1.0:
+                            dashboard.push_event("BIG_DELTA", details)
 
             perception = PerceptionThread(
                 provider=provider,
@@ -184,9 +271,12 @@ def main():
                 state_holder=state_holder,
                 rate_hz=config.vlm_rate_hz,
                 frame_count=config.frame_count,
+                on_result=on_vlm_result,
             )
             perception.start()
             print(f"VLM perception active ({config.vlm_rate_hz} Hz).\n")
+            if dashboard:
+                dashboard.push_event("SYSTEM", f"VLM started ({config.vlm_model} @ {config.vlm_rate_hz} Hz)")
 
         # --- Main control loop @ 25 Hz ---
         print("Running (Ctrl+C to stop)\n")
@@ -215,6 +305,17 @@ def main():
                 print(f"  [e={state.energy:.2f} m={state.mood:.2f} "
                       f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f}] "
                       f"X={x:.0f} Y={y:.0f} Z={z:.0f} spd={speed:.0f}{vlm_info}")
+
+                # Push state to dashboard periodically (even without VLM updates)
+                if dashboard:
+                    dashboard.push_state(
+                        state, state,
+                        motion_xyz=(x, y, z), speed=speed,
+                        vlm_count=perception.call_count if perception else 0,
+                        vlm_latency=0,
+                    )
+                    dashboard.push_triggers(trigger_engine.active_triggers)
+
                 last_log = t
 
             t += DT
@@ -229,6 +330,9 @@ def main():
             cam.stop()
         mock_thread_flag[0] = False
         ctrl.disconnect()
+        if dashboard:
+            dashboard.set_status("stopped")
+            dashboard.push_event("SYSTEM", "Pipeline stopped")
 
 
 if __name__ == "__main__":

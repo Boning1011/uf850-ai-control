@@ -188,13 +188,15 @@ class PerceptionThread:
 
     def __init__(self, provider: VLMProvider, system_prompt: str,
                  frame_buffer: FrameBuffer, state_holder: StateHolder,
-                 rate_hz: float = 1.0, frame_count: int = 5):
+                 rate_hz: float = 1.0, frame_count: int = 5,
+                 on_result=None):
         self.provider = provider
         self.system_prompt = system_prompt
         self.frame_buffer = frame_buffer
         self.state_holder = state_holder
         self.rate_hz = rate_hz
         self.frame_count = frame_count
+        self.on_result = on_result  # callback(raw_state, latency, call_count)
         self.running = True
         self._thread = None
         self.call_count = 0
@@ -237,6 +239,12 @@ class PerceptionThread:
                 print(f"[VLM] #{self.call_count} ({latency:.1f}s) "
                       f"e={state.energy:.2f} ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
                       f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}", flush=True)
+
+                if self.on_result:
+                    try:
+                        self.on_result(state, latency, self.call_count)
+                    except Exception:
+                        pass
 
             except Exception as e:
                 self.error_count += 1
