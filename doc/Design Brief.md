@@ -67,6 +67,38 @@ The Python control script sends current state, tool position, orientation, and a
 3. **1–2 weeks**: Polish motion personalities, integrate TouchDesigner via OSC, add local pre-filter
 4. **1 month (optional)**: Introduce imitation learning via LeRobot for organic gesture quality
 
+## Future: Real-Time Tracking Mode (Planned)
+
+A parallel interaction mode where the arm directly tracks a human body part (hand, face, etc.) via local detection (MediaPipe / similar), bypassing the VLM perception layer entirely. This would coexist with the VLM-driven procedural modes — switchable at runtime (e.g. from the web dashboard).
+
+**Architecture sketch:**
+
+```
+Camera → Local detector (MediaPipe) → Pixel coordinates
+  → Linear mapping to Performance Zone (arm Cartesian)
+  → Clamp to safe bounds (existing)
+  → Overshoot → RPY lean for expressiveness
+  → Soft margin deceleration near boundaries
+  → EMA on clamped output (not raw target)
+  → Servo mode (existing velocity clamp pipeline)
+```
+
+**Key design decisions:**
+- Implemented as a new motion mode alongside CALM/ALERT/EXCITED/etc., not a replacement
+- Reuses existing servo pipeline (`send_servo` + velocity clamp)
+- Performance Zone = conservative subset of workspace, same concept as current `safety` bounds
+- RPY lean (tool tilts toward unreachable targets) adds body language when hand goes out of range
+- Soft margin near boundaries: gradual speed/noise reduction before hitting the wall
+- Smooth after clamp, not before — prevents oscillation at boundary crossings
+
+**Implementation order (incremental):**
+1. MediaPipe hand/face detection → screen overlay to verify tracking quality
+2. Linear mapping from pixel to arm XYZ → pure clamp, no lean yet
+3. Integrate as a new motion mode, switchable from dashboard
+4. Add RPY lean for expressiveness at boundaries
+5. Add soft margin deceleration
+6. Tune gains, smoothing, zone size on real hardware
+
 ## Key Dependencies
 
 - UFactory Python SDK (`xArm-Python-SDK`)

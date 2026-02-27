@@ -4,6 +4,25 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-02-27 — 规划：实时跟踪模式（手部/人脸）
+
+**决策：** 未来要做一个独立的实时跟踪交互模式，与现有 VLM 驱动的程序化运动并行存在，可在运行时切换。
+
+**动机：** 当前系统是 VLM → 抽象参数 → 程序化运动，适合"感知-表演"场景。但直接的手部/人脸跟踪是另一种交互范式——1:1 位置映射，观众操控感更强。两者应共存。
+
+**核心思路：**
+- 本地检测器（MediaPipe 等）提取手/脸坐标，线性映射到机械臂笛卡尔空间
+- 复用现有 servo pipeline（velocity clamp + bounds clamp）
+- 超出可达范围时，用 RPY 倾斜表达"够不到"的身体语言（lean）
+- 接近边界时 soft margin 减速，避免突然停顿
+- 作为新的 motion mode 接入 `ParametricMotionGenerator`，不替换现有模式
+
+**实施路线：** 分步验证——先跑通 MediaPipe 检测，再做坐标映射，再接入 motion mode，最后加 lean 和 soft margin。
+
+详见 [Design Brief — Future: Real-Time Tracking Mode](Design%20Brief.md)
+
+---
+
 ## 2026-02-27 — Servo Mode 压力测试 + 修复 3 个可靠性 Bug
 
 **背景：** Servo Mode (Mode 1) 是刚实现的实时流式控制，替代 Mode 0 的 FIFO 队列。压力测试发现了 3 个 bug，全部修复后 8 个测试阶段全部通过。
