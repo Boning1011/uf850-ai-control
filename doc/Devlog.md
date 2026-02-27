@@ -4,6 +4,44 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-02-27 — Servo Mode 压力测试 + 修复 3 个可靠性 Bug
+
+**背景：** Servo Mode (Mode 1) 是刚实现的实时流式控制，替代 Mode 0 的 FIFO 队列。压力测试发现了 3 个 bug，全部修复后 8 个测试阶段全部通过。
+
+**测试脚本：** `test_servo_stress.py`（8 个阶段，`--quick` 约 80 秒完成）
+
+| 阶段 | 测试内容 | 结果 |
+|------|---------|------|
+| 1. 持续 25Hz 流式 | CALM 模式连续发送 | PASS (24.7 Hz, 0 errors) |
+| 2. 快速模式切换 | 6 个模式每 2 秒轮换 | PASS (7 次切换, 0 errors) |
+| 3. 极端位置 | 安全边界 8 个角 | PASS (4 个角 IK 不可达但无错误) |
+| 4. 速度极端 | DORMANT↔EXCITED 突变 | PASS (修复后) |
+| 5. Pitch 摆动 | PLAYFUL 模式 J5 快速点头 | PASS (修复后) |
+| 6. 随机轰炸 | 每 0.1 秒随机参数+随机模式 | PASS |
+| 7. 边界浸泡 | 故意超出边界，验证 clamp | PASS (全部在界内) |
+| 8. 恢复测试 | 强制触发 error 60，验证自动恢复 | PASS |
+
+**发现并修复的 3 个 Bug：**
+
+1. **`enable_servo()` 不验证 `set_mode(1)` 是否成功** — 错误恢复后 `set_mode(1)` 返回 code=10（未就绪），但代码不检查。后续所有 servo 命令在 Mode 0 下运行，产生大量 "mode may be incorrect" 警告。
+   - **修复：** 加入 3 次重试 + 完整重置循环 + 异步模式确认等待（最多 1 秒）+ 返回 True/False
+
+2. **`_recover()` 直接调 `set_mode(1)` 而非 `enable_servo()`** — 恢复后 servo 模式恢复失败时无感知、无重试。
+   - **修复：** 改用 `enable_servo()` 统一入口，打印恢复结果
+
+3. **EXCITED 模式工作空间过大，触发 Joint Angle Limit (error 23)** — 从 DORMANT 极近位置突跳到 EXCITED 全幅，经过不可达的关节角组合。
+   - **修复：** 振幅从 0.45/0.45/0.35 降到 0.35/0.30/0.28，谐波叠加从 30/25mm 降到 20/18mm。视觉效果仍然足够戏剧化
+
+**附加：** ERROR_NAMES 增加 code 60（Servo Cartesian Out of Range）
+
+**Phase 3 观察 — IK 不可达角不是 bug：**
+- 安全边界定义的是一个长方体，但臂的实际工作空间是球形/环形
+- X=100（极近基座）+ Y=±200（极侧方）或 Z=850（极高）组合超出关节活动范围
+- SDK 不报错，只是到不了目标位置（drift 最大 442mm）
+- 不影响正常使用（运动生成器不会产生这种极端组合）
+
+---
+
 ## 2026-02-26 — Layer 1: AI Perception Pipeline (Gemini 2.5 Flash) 跑通
 
 **验证结果：**
