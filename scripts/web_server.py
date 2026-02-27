@@ -44,6 +44,8 @@ class DashboardServer:
         self._primary_action = "idle"
         self._motion_debug = None
         self._arm_telemetry = None
+        self._current_mode = "IDLE"
+        self._mode_history = []  # [{time, from_mode, to_mode, action, confidence}]
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -116,6 +118,8 @@ class DashboardServer:
                             "vlm_count": server._vlm_count,
                             "vlm_latency": server._vlm_latency,
                             "active_triggers": server._active_triggers,
+                            "current_mode": server._current_mode,
+                            "mode_history": server._mode_history[-10:],
                             "status": server._pipeline_status,
                         }
 
@@ -211,6 +215,25 @@ class DashboardServer:
         """Update active trigger list. Called after TriggerEngine.check()."""
         with self._lock:
             self._active_triggers = list(active_triggers)
+
+    def push_mode_transition(self, from_mode, to_mode, action, confidence):
+        """Record a mode transition. Called from action detection loop."""
+        entry = {
+            "time": time.time(),
+            "from_mode": from_mode,
+            "to_mode": to_mode,
+            "action": action,
+            "confidence": round(confidence, 2),
+        }
+        with self._lock:
+            self._current_mode = to_mode
+            self._mode_history.append(entry)
+            # Keep last 50 transitions
+            if len(self._mode_history) > 50:
+                self._mode_history = self._mode_history[-50:]
+        self.push_event("MODE_SWITCH",
+                        f"{action} (conf {confidence:.2f}) → {to_mode}",
+                        f"from {from_mode}")
 
     def push_event(self, event_type, message, details=""):
         """Push an event to the log. Thread-safe."""

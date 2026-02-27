@@ -38,6 +38,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from arm_controller import ArmController, acquire_lock
+from perception import FrameBuffer
+from persona import PerceptionState, StateHolder
+from web_server import DashboardServer
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -207,6 +210,10 @@ def main():
                         help="Test duration seconds (default: 180)")
     parser.add_argument("--arm-ip", default="127.0.0.1",
                         help="xArm IP (default: 127.0.0.1 for simulator)")
+    parser.add_argument("--no-dashboard", action="store_true",
+                        help="Disable web dashboard")
+    parser.add_argument("--port", type=int, default=7860,
+                        help="Dashboard port (default: 7860)")
     args = parser.parse_args()
 
     acquire_lock()
@@ -248,6 +255,16 @@ def main():
     print("[Camera] Ready.", flush=True)
     logger.log_event("CAMERA_READY")
 
+    # Dashboard
+    frame_buffer = FrameBuffer(maxlen=10)
+    state_holder = StateHolder(smoothing=0.3)
+    dashboard = None
+    if not args.no_dashboard:
+        dashboard = DashboardServer(frame_buffer, state_holder,
+                                    host="0.0.0.0", port=args.port)
+        dashboard.start()
+        logger.log_event("DASHBOARD_READY")
+
     # VLM
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     print("[VLM] Ready (gemini-2.5-flash, thinking=OFF).", flush=True)
@@ -274,7 +291,9 @@ def main():
                 ret, frame = cap.read()
                 if ret:
                     _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                    frames_jpeg.append(buf.tobytes())
+                    jpeg_bytes = buf.tobytes()
+                    frames_jpeg.append(jpeg_bytes)
+                    frame_buffer.push(jpeg_bytes)  # feed dashboard camera
                 time.sleep(0.02)
 
             if not frames_jpeg:
@@ -320,6 +339,7 @@ def main():
             mode_changed = False
             new_mode = ACTION_TO_MODE.get(action)
             if new_mode and new_mode != mode and det.confidence >= 0.6:
+                old_mode = mode
                 mode = new_mode
                 mode_start = time.time()
                 mode_changed = True
@@ -327,6 +347,8 @@ def main():
                 print(f"  >>> {action.upper()} detected (conf={det.confidence:.2f}) "
                       f"→ mode: {mode} <<<", flush=True)
                 logger.log_event(f"MODE SWITCH → {mode}")
+                if dashboard:
+                    dashboard.push_mode_transition(old_mode, mode, action, det.confidence)
 
             # Compute arm position
             t_arm = time.time() - t_start
@@ -335,6 +357,21 @@ def main():
             x, y, z, spd = mode_fn(t_arm, phase_t)
 
             arm.send_position(x, y, z, speed=spd)
+
+            # Push to dashboard
+            if dashboard:
+                raw_state = PerceptionState(
+                    energy=det.energy, presence=det.confidence,
+                    mood=0.5, urgency=0.0,
+                    attention_x=0.0, attention_y=0.0,
+                    timestamp=time.time(),
+                )
+                state_holder.update(raw_state)
+                smoothed = state_holder.get()
+                dashboard.push_state(raw_state, smoothed,
+                                     motion_xyz=(x, y, z), speed=spd,
+                                     vlm_count=call_count, vlm_latency=latency)
+                dashboard.push_vlm_text(det.description[:50], action)
 
             # Log
             logger.log(latency, det, mode, (x, y, z), mode_changed)

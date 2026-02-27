@@ -35,7 +35,7 @@ class VLMOutput(BaseModel):
     mood: float = Field(description="Emotional coloring. 0.0=tense/wary, 0.5=neutral, 1.0=playful/joyful")
     presence: float = Field(description="Audience amount. 0.0=empty room, 1.0=many people very close")
     urgency: float = Field(description="Sudden change. 0.0=stable scene, 1.0=dramatic sudden change")
-    scene_description: str = Field(default="", description="Brief scene description in Chinese, max 30 chars. E.g. '一个人坐在桌前看手机'")
+    scene_description: str = Field(default="", description="Brief scene description in English, max 15 words. E.g. 'One person sitting at desk looking at phone'")
     primary_action: str = Field(default="idle", description="Primary detected action: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown")
 
 

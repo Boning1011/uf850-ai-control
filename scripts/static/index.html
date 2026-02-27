@@ -211,7 +211,7 @@
   .scene-text {
     font-size: 12px;
     color: var(--text);
-    font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+    font-family: inherit;
     line-height: 1.4;
     word-break: break-all;
   }
@@ -338,6 +338,62 @@
     color: var(--accent);
   }
   .no-triggers { color: var(--text-dim); font-size: 10px; font-style: italic; }
+
+  /* Current Mode */
+  .mode-section {
+    border-top: 1px solid var(--border);
+    padding: 6px 12px;
+  }
+
+  .mode-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .mode-badge {
+    padding: 3px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: #23863626;
+    color: var(--green);
+  }
+  .mode-badge.DRINKING { background: #f8514926; color: var(--red); }
+  .mode-badge.WAVING { background: #3fb95026; color: var(--green); }
+  .mode-badge.LEANING { background: #d2992226; color: var(--orange); }
+  .mode-badge.POINTING { background: #bc8cff26; color: var(--purple); }
+  .mode-badge.RESTING { background: #388bfd26; color: var(--accent); }
+  .mode-badge.IDLE { background: #30363d; color: var(--text-dim); }
+
+  .mode-transition-arrow {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .mode-transition-detail {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .mode-history {
+    margin-top: 6px;
+    font-size: 10px;
+  }
+
+  .mode-history-entry {
+    display: flex;
+    gap: 6px;
+    padding: 1px 0;
+    color: var(--text-dim);
+  }
+
+  .mode-history-entry .mh-time { width: 55px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .mode-history-entry .mh-arrow { color: var(--text); }
+  .mode-history-entry .mh-action { color: var(--accent); }
 
   /* Event log */
   .log-section {
@@ -539,6 +595,17 @@
         </div>
       </div>
 
+      <!-- Current Mode -->
+      <div class="mode-section">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Current Mode</div>
+        <div class="mode-current">
+          <span class="mode-badge IDLE" id="modeBadge">IDLE</span>
+          <span class="mode-transition-arrow" id="modeTransitionArrow"></span>
+        </div>
+        <div class="mode-transition-detail" id="modeTransitionDetail">No transitions yet</div>
+        <div class="mode-history" id="modeHistory"></div>
+      </div>
+
       <!-- Event Log -->
       <div class="log-section">
         <div class="section-title">Event Log</div>
@@ -696,6 +763,11 @@ function handleState(msg) {
 
   // Triggers
   updateTriggers(msg.active_triggers || []);
+
+  // Mode
+  if (msg.current_mode !== undefined) {
+    updateMode(msg.current_mode, msg.mode_history || []);
+  }
 }
 
 function handleEvent(msg) { addLogEntry(msg); }
@@ -733,6 +805,33 @@ function updateTriggers(triggers) {
   container.innerHTML = triggers.map(t => `<span class="trigger-chip">${t}</span>`).join('');
 }
 
+function updateMode(currentMode, modeHistory) {
+  const badge = document.getElementById('modeBadge');
+  badge.textContent = currentMode;
+  badge.className = 'mode-badge ' + currentMode;
+
+  const detail = document.getElementById('modeTransitionDetail');
+  const arrow = document.getElementById('modeTransitionArrow');
+
+  if (modeHistory && modeHistory.length > 0) {
+    const last = modeHistory[modeHistory.length - 1];
+    arrow.textContent = last.from_mode + ' \u2192';
+    detail.textContent = `"${last.action}" (conf ${last.confidence})`;
+
+    // Show last 5 transitions
+    const container = document.getElementById('modeHistory');
+    const recent = modeHistory.slice(-5).reverse();
+    container.innerHTML = recent.map(h => {
+      const t = new Date(h.time * 1000).toLocaleTimeString('en-US', { hour12: false });
+      return `<div class="mode-history-entry"><span class="mh-time">${t}</span><span class="mh-arrow">${h.from_mode} \u2192 ${h.to_mode}</span><span class="mh-action">${h.action} (${h.confidence})</span></div>`;
+    }).join('');
+  } else {
+    arrow.textContent = '';
+    detail.textContent = 'No transitions yet';
+    document.getElementById('modeHistory').innerHTML = '';
+  }
+}
+
 function addLogEntry(evt) {
   const container = document.getElementById('logEntries');
   const entry = document.createElement('div');
@@ -748,7 +847,8 @@ function addLogEntry(evt) {
   else if (evtType === 'BIG_DELTA') icon = '\uD83D\uDCCA';
   else if (evtType === 'VLM') icon = '\uD83D\uDD0D';
   else if (evtType.includes('ERROR')) icon = '\u274C';
-  else if (evtType === 'COMMAND') icon = '\u26A1';
+  else if (evtType === 'MODE_SWITCH') icon = '\u26A1';
+  else if (evtType === 'COMMAND') icon = '\u2699';
 
   entry.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-type">${icon}</span><span class="log-msg"><b>${evtType}</b> ${evt.message || ''} ${evt.details || ''}</span>`;
 
