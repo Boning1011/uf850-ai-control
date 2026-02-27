@@ -40,6 +40,10 @@ class DashboardServer:
         self._vlm_latency = 0.0
         self._active_triggers = []
         self._pipeline_status = "running"
+        self._scene_description = ""
+        self._primary_action = "idle"
+        self._motion_debug = None
+        self._arm_telemetry = None
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -105,6 +109,10 @@ class DashboardServer:
                             "smoothed": server._latest_smoothed,
                             "raw": server._latest_raw,
                             "motion": server._latest_motion,
+                            "motion_debug": server._motion_debug,
+                            "arm": server._arm_telemetry,
+                            "scene_description": server._scene_description,
+                            "primary_action": server._primary_action,
                             "vlm_count": server._vlm_count,
                             "vlm_latency": server._vlm_latency,
                             "active_triggers": server._active_triggers,
@@ -152,7 +160,7 @@ class DashboardServer:
     # ── Public API (called from pipeline threads) ──
 
     def push_state(self, raw_state, smoothed_state, motion_xyz=None, speed=None,
-                   vlm_count=0, vlm_latency=0.0):
+                   vlm_count=0, vlm_latency=0.0, motion_debug=None):
         """Push VLM state update. Called from perception/main threads."""
         raw_dict = {
             "energy": round(raw_state.energy, 3),
@@ -185,6 +193,19 @@ class DashboardServer:
             self._latest_motion = motion_dict
             self._vlm_count = vlm_count
             self._vlm_latency = round(vlm_latency, 2)
+            if motion_debug is not None:
+                self._motion_debug = motion_debug
+
+    def push_vlm_text(self, scene_description, primary_action):
+        """Push VLM scene description text. Called from perception callback."""
+        with self._lock:
+            self._scene_description = scene_description
+            self._primary_action = primary_action
+
+    def push_arm_telemetry(self, telemetry):
+        """Push arm physical telemetry dict. Called from main loop."""
+        with self._lock:
+            self._arm_telemetry = telemetry
 
     def push_triggers(self, active_triggers):
         """Update active trigger list. Called after TriggerEngine.check()."""

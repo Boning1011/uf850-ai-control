@@ -17,6 +17,8 @@ vlm:
     - mood: emotional coloring. 0.0 = tense/wary, 0.5 = neutral/calm, 1.0 = playful/delighted
     - presence: how much audience is sensed. 0.0 = empty room, 1.0 = many people very close
     - urgency: sudden change detection. 0.0 = stable/gradual, 1.0 = dramatic sudden change
+    - scene_description: 用中文简述你观察到的画面（最多30字），例如"一个人坐在桌前举手"或"空房间，无人"
+    - primary_action: the single dominant action you observe. One of: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown
 
     Dynamic gesture recognition tips:
     - Head shaking: head position shifts left-right across frames

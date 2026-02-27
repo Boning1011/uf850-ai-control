@@ -27,6 +27,7 @@ class ParametricMotionGenerator:
 
     def __init__(self, persona_config):
         self.cfg = persona_config
+        self._debug = {}  # cached debug state from last get_target call
 
     def get_target(self, t, state):
         """Compute (x, y, z) for time t given current PerceptionState.
@@ -81,10 +82,26 @@ class ParametricMotionGenerator:
         y += playful * amp_y * 0.4 * math.sin(0.53 * phase_y + 0.8)
 
         # 6. Urgency: temporary startle jitter
-        if state.urgency > 0.3:
-            jitter = state.urgency * 15  # mm
-            x += jitter * math.sin(2 * math.pi * 8.0 * t)
-            z += jitter * math.cos(2 * math.pi * 7.3 * t)
+        jitter_active = state.urgency > 0.3
+        jitter_amp = state.urgency * 15 if jitter_active else 0
+        if jitter_active:
+            x += jitter_amp * math.sin(2 * math.pi * 8.0 * t)
+            z += jitter_amp * math.cos(2 * math.pi * 7.3 * t)
+
+        # Cache debug info (cheap dict assignment, no extra math)
+        self._debug = {
+            "amp": [round(amp_x, 1), round(amp_y, 1), round(amp_z, 1)],
+            "freq": [round(freq_x, 3), round(freq_y, 3), round(freq_z, 3)],
+            "phase": [
+                round((phase_x % (2 * math.pi)) / (2 * math.pi), 2),
+                round((phase_y % (2 * math.pi)) / (2 * math.pi), 2),
+                round((phase_z % (2 * math.pi)) / (2 * math.pi), 2),
+            ],
+            "mood_harmonic": round(harmonic, 2),
+            "playful_mod": round(playful, 2),
+            "jitter_active": jitter_active,
+            "jitter_amp": round(jitter_amp, 1),
+        }
 
         return x, y, z
 
@@ -92,4 +109,9 @@ class ParametricMotionGenerator:
         """Compute arm speed (mm/s) from energy level."""
         cfg = self.cfg
         mult = _lerp(cfg.speed_energy_mult[0], cfg.speed_energy_mult[1], state.energy)
+        self._debug["speed_mult"] = round(mult, 2)
         return cfg.speed_base * mult
+
+    def get_debug_state(self):
+        """Return last-computed motion debug state."""
+        return self._debug.copy() if self._debug else {}

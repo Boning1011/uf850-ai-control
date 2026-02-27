@@ -47,11 +47,7 @@
     gap: 16px;
   }
 
-  .header h1 {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-  }
+  .header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.5px; }
 
   .status-badge {
     padding: 2px 10px;
@@ -87,15 +83,12 @@
   .btn.pause { border-color: var(--orange); color: var(--orange); }
   .btn.resume { border-color: var(--green); color: var(--green); }
 
-  .vlm-badge {
-    color: var(--text-dim);
-    font-size: 12px;
-  }
+  .vlm-badge { color: var(--text-dim); font-size: 12px; }
 
   /* Main content */
   .main {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 340px;
     gap: 1px;
     background: var(--border);
     overflow: hidden;
@@ -110,17 +103,8 @@
     position: relative;
     overflow: hidden;
   }
-
-  .camera-panel img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  .camera-offline {
-    color: var(--text-dim);
-    font-size: 14px;
-  }
+  .camera-panel img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .camera-offline { color: var(--text-dim); font-size: 14px; }
 
   /* Right sidebar */
   .sidebar {
@@ -131,8 +115,8 @@
   }
 
   .section-title {
-    padding: 8px 12px;
-    font-size: 11px;
+    padding: 6px 12px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -142,21 +126,21 @@
 
   /* Parameter bars */
   .params {
-    padding: 8px 12px;
+    padding: 6px 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
   .param-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .param-label {
-    width: 80px;
-    font-size: 11px;
+    width: 72px;
+    font-size: 10px;
     color: var(--text-dim);
     text-align: right;
     flex-shrink: 0;
@@ -164,17 +148,13 @@
 
   .param-bar-container {
     flex: 1;
-    height: 16px;
+    height: 14px;
     background: #21262d;
     border-radius: 3px;
     position: relative;
     overflow: hidden;
   }
 
-  /* For bipolar params (attention_x, attention_y): center origin */
-  .param-bar-container.bipolar {
-    background: #21262d;
-  }
   .param-bar-container.bipolar .param-bar-center {
     position: absolute;
     left: 50%;
@@ -187,57 +167,177 @@
   .param-bar {
     height: 100%;
     border-radius: 3px;
-    transition: width 0.15s ease, left 0.15s ease, background 0.15s ease;
+    transition: width 0.15s ease, left 0.15s ease;
     min-width: 2px;
   }
 
   .param-value {
-    width: 42px;
-    font-size: 11px;
+    width: 40px;
+    font-size: 10px;
     color: var(--text);
     text-align: right;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
   }
 
-  /* Motion info */
-  .motion-info {
-    padding: 8px 12px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 12px;
-    font-size: 12px;
+  /* VLM Scene */
+  .scene-section {
     border-top: 1px solid var(--border);
+    padding: 6px 12px;
   }
 
-  .motion-info .label { color: var(--text-dim); }
-  .motion-info .value { text-align: right; font-variant-numeric: tabular-nums; }
-
-  /* Active triggers */
-  .triggers-section {
-    border-top: 1px solid var(--border);
-    padding: 8px 12px;
-    min-height: 60px;
-  }
-
-  .trigger-chips {
+  .scene-content {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 6px;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 4px;
   }
 
-  .trigger-chip {
-    padding: 2px 8px;
+  .action-badge {
+    padding: 1px 8px;
     border-radius: 10px;
     font-size: 10px;
     font-weight: 600;
     background: #388bfd26;
     color: var(--accent);
-    letter-spacing: 0.3px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
-  .trigger-chip.fired { background: #f8514926; color: var(--red); }
-  .no-triggers { color: var(--text-dim); font-size: 11px; font-style: italic; margin-top: 6px; }
+  .action-badge.waving { background: #3fb95026; color: var(--green); }
+  .action-badge.approaching { background: #d2992226; color: var(--orange); }
+  .action-badge.leaving { background: #f8514926; color: var(--red); }
+  .action-badge.pointing { background: #bc8cff26; color: var(--purple); }
+
+  .scene-text {
+    font-size: 12px;
+    color: var(--text);
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+    line-height: 1.4;
+    word-break: break-all;
+  }
+
+  /* Motion info */
+  .motion-info {
+    padding: 6px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 12px;
+    font-size: 11px;
+  }
+  .motion-info .label { color: var(--text-dim); }
+  .motion-info .value { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Motion debug */
+  .motion-debug {
+    padding: 4px 12px 6px;
+    border-top: 1px solid #21262d;
+    font-size: 10px;
+  }
+
+  .debug-grid {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 1px 8px;
+  }
+  .debug-grid .label { color: var(--text-dim); }
+  .debug-grid .value { font-variant-numeric: tabular-nums; }
+
+  .debug-flags {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .flag-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    background: var(--border);
+    transition: background 0.2s;
+  }
+
+  .flag-label { color: var(--text-dim); font-size: 10px; }
+
+  .speed-mult {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Arm Status */
+  .arm-section {
+    border-top: 1px solid var(--border);
+  }
+
+  .arm-status-bar {
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+  }
+
+  .arm-state-badge {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #23863626;
+    color: var(--green);
+  }
+  .arm-state-badge.error { background: #f8514926; color: var(--red); }
+  .arm-state-badge.warn { background: #d2992226; color: var(--orange); }
+
+  .arm-info { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  .joint-table {
+    padding: 2px 12px 6px;
+    display: grid;
+    grid-template-columns: 32px repeat(6, 1fr);
+    gap: 1px 4px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .joint-table .jh {
+    color: var(--text-dim);
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .joint-table .jl { color: var(--text-dim); }
+  .joint-table .jv { text-align: center; }
+
+  /* Active triggers */
+  .triggers-section {
+    border-top: 1px solid var(--border);
+    padding: 6px 12px;
+  }
+
+  .triggers-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .trigger-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  .trigger-chip {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    background: #388bfd26;
+    color: var(--accent);
+  }
+  .no-triggers { color: var(--text-dim); font-size: 10px; font-style: italic; }
 
   /* Event log */
   .log-section {
@@ -251,40 +351,25 @@
   .log-entries {
     flex: 1;
     overflow-y: auto;
-    padding: 4px 0;
+    padding: 2px 0;
     font-size: 11px;
   }
 
   .log-entry {
     padding: 2px 12px;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     border-bottom: 1px solid #21262d;
   }
   .log-entry:hover { background: #161b2280; }
+  .log-time { color: var(--text-dim); flex-shrink: 0; width: 55px; font-variant-numeric: tabular-nums; }
+  .log-type { flex-shrink: 0; width: 16px; text-align: center; }
+  .log-msg { flex: 1; word-break: break-word; }
 
-  .log-time {
-    color: var(--text-dim);
-    flex-shrink: 0;
-    width: 55px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .log-type {
-    flex-shrink: 0;
-    width: 16px;
-    text-align: center;
-  }
-
-  .log-msg {
-    flex: 1;
-    word-break: break-word;
-  }
-
-  /* Bottom bar */
+  /* Footer */
   .footer {
     background: var(--surface);
-    padding: 6px 16px;
+    padding: 4px 16px;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -333,9 +418,9 @@
 
     <!-- Right sidebar -->
     <div class="sidebar">
+      <!-- VLM Parameters -->
       <div class="section-title">VLM Parameters</div>
       <div class="params" id="params">
-        <!-- Unipolar params: 0..1 -->
         <div class="param-row" data-param="energy">
           <span class="param-label">energy</span>
           <div class="param-bar-container">
@@ -343,7 +428,6 @@
           </div>
           <span class="param-value">0.00</span>
         </div>
-        <!-- Bipolar params: -1..1 -->
         <div class="param-row" data-param="attention_x">
           <span class="param-label">attention_x</span>
           <div class="param-bar-container bipolar">
@@ -383,7 +467,16 @@
         </div>
       </div>
 
-      <!-- Motion info -->
+      <!-- VLM Scene -->
+      <div class="scene-section">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">VLM Scene</div>
+        <div class="scene-content">
+          <span class="action-badge" id="actionBadge">idle</span>
+          <span class="scene-text" id="sceneText">--</span>
+        </div>
+      </div>
+
+      <!-- Motion Target -->
       <div class="section-title">Motion</div>
       <div class="motion-info" id="motionInfo">
         <span class="label">X</span><span class="value" id="motionX">--</span>
@@ -392,16 +485,61 @@
         <span class="label">Speed</span><span class="value" id="motionSpeed">--</span>
       </div>
 
-      <!-- Active triggers -->
+      <!-- Motion Debug -->
+      <div class="motion-debug" id="motionDebug">
+        <div class="debug-grid">
+          <span class="label">Amp</span><span class="value" id="dbgAmp">--</span>
+          <span class="label">Freq</span><span class="value" id="dbgFreq">--</span>
+          <span class="label">Phase</span><span class="value" id="dbgPhase">--</span>
+        </div>
+        <div class="debug-flags">
+          <span class="flag-dot" id="flagHarmonic" title="Mood harmonic (tense)"></span>
+          <span class="flag-label">harmonic</span>
+          <span class="flag-dot" id="flagPlayful" title="Playful modulation"></span>
+          <span class="flag-label">playful</span>
+          <span class="flag-dot" id="flagJitter" title="Urgency jitter"></span>
+          <span class="flag-label">jitter</span>
+          <span class="speed-mult" id="dbgSpeedMult">1.0x</span>
+        </div>
+      </div>
+
+      <!-- Arm Status -->
+      <div class="arm-section">
+        <div class="section-title">Arm Status</div>
+        <div class="arm-status-bar">
+          <span class="arm-state-badge" id="armStateBadge">--</span>
+          <span class="arm-info" id="armQueue">Q: --</span>
+          <span class="arm-info" id="armTcpSpeed">TCP: --</span>
+        </div>
+        <div class="joint-table" id="jointTable">
+          <span class="jl"></span>
+          <span class="jh">J1</span><span class="jh">J2</span><span class="jh">J3</span>
+          <span class="jh">J4</span><span class="jh">J5</span><span class="jh">J6</span>
+
+          <span class="jl">Ang</span>
+          <span class="jv" id="ja0">--</span><span class="jv" id="ja1">--</span><span class="jv" id="ja2">--</span>
+          <span class="jv" id="ja3">--</span><span class="jv" id="ja4">--</span><span class="jv" id="ja5">--</span>
+
+          <span class="jl">Tmp</span>
+          <span class="jv" id="jt0">--</span><span class="jv" id="jt1">--</span><span class="jv" id="jt2">--</span>
+          <span class="jv" id="jt3">--</span><span class="jv" id="jt4">--</span><span class="jv" id="jt5">--</span>
+
+          <span class="jl">Amp</span>
+          <span class="jv" id="jc0">--</span><span class="jv" id="jc1">--</span><span class="jv" id="jc2">--</span>
+          <span class="jv" id="jc3">--</span><span class="jv" id="jc4">--</span><span class="jv" id="jc5">--</span>
+        </div>
+      </div>
+
+      <!-- Active Triggers -->
       <div class="triggers-section">
-        <div class="section-title" style="padding:0;border:none;margin-bottom:2px">Active Triggers</div>
+        <div class="triggers-header">Active Triggers</div>
         <div id="triggersContainer">
           <div class="no-triggers" id="noTriggers">(none)</div>
           <div class="trigger-chips" id="triggerChips"></div>
         </div>
       </div>
 
-      <!-- Event log -->
+      <!-- Event Log -->
       <div class="log-section">
         <div class="section-title">Event Log</div>
         <div class="log-entries" id="logEntries"></div>
@@ -422,7 +560,6 @@ let ws = null;
 let reconnectTimer = null;
 const MAX_LOG_ENTRIES = 200;
 
-// Param colors
 const PARAM_COLORS = {
   energy: 'var(--green)',
   attention_x: 'var(--accent)',
@@ -431,8 +568,9 @@ const PARAM_COLORS = {
   presence: 'var(--orange)',
   urgency: 'var(--red)',
 };
-
 const BIPOLAR_PARAMS = new Set(['attention_x', 'attention_y']);
+const ARM_STATES = ['Ready', 'Moving', 'Sleep', 'Suspended', 'Stopping'];
+const ACTION_COLORS = { waving: 'waving', approaching: 'approaching', leaving: 'leaving', pointing: 'pointing' };
 
 // ── WebSocket ──
 function connect() {
@@ -450,9 +588,7 @@ function connect() {
     document.getElementById('footerInfo').textContent = 'Disconnected — reconnecting...';
     document.getElementById('statusBadge').textContent = 'OFFLINE';
     document.getElementById('statusBadge').className = 'status-badge connecting';
-    if (!reconnectTimer) {
-      reconnectTimer = setInterval(connect, 3000);
-    }
+    if (!reconnectTimer) { reconnectTimer = setInterval(connect, 3000); }
   };
 
   ws.onmessage = (e) => {
@@ -471,37 +607,41 @@ function sendCommand(cmd) {
 
 // ── Handlers ──
 function handleInit(msg) {
-  // Replay event history
-  if (msg.events) {
-    msg.events.forEach(evt => addLogEntry(evt));
-  }
+  if (msg.events) msg.events.forEach(evt => addLogEntry(evt));
 }
 
 function handleState(msg) {
-  // Update status badge
+  // Status badge
   const badge = document.getElementById('statusBadge');
   const status = msg.status || 'running';
   badge.textContent = status.toUpperCase();
   badge.className = 'status-badge ' + status;
 
-  // Update pause/resume buttons
+  // Pause/resume buttons
   const isPaused = status === 'paused';
   document.getElementById('btnPause').style.display = isPaused ? 'none' : '';
   document.getElementById('btnResume').style.display = isPaused ? '' : 'none';
 
-  // Update VLM badge
-  const vlmBadge = document.getElementById('vlmBadge');
-  vlmBadge.textContent = `VLM: #${msg.vlm_count} (${msg.vlm_latency}s)`;
+  // VLM badge
+  document.getElementById('vlmBadge').textContent = `VLM: #${msg.vlm_count} (${msg.vlm_latency}s)`;
 
-  // Update param bars
-  const data = msg.smoothed;
-  if (data) {
-    for (const [key, value] of Object.entries(data)) {
+  // Param bars
+  if (msg.smoothed) {
+    for (const [key, value] of Object.entries(msg.smoothed)) {
       updateParamBar(key, value);
     }
   }
 
-  // Update motion info
+  // VLM Scene
+  if (msg.scene_description !== undefined) {
+    document.getElementById('sceneText').textContent = msg.scene_description || '--';
+    const ab = document.getElementById('actionBadge');
+    const action = msg.primary_action || 'idle';
+    ab.textContent = action;
+    ab.className = 'action-badge' + (ACTION_COLORS[action] ? ' ' + ACTION_COLORS[action] : '');
+  }
+
+  // Motion target
   if (msg.motion) {
     document.getElementById('motionX').textContent = msg.motion.x.toFixed(1);
     document.getElementById('motionY').textContent = msg.motion.y.toFixed(1);
@@ -509,36 +649,71 @@ function handleState(msg) {
     document.getElementById('motionSpeed').textContent = msg.motion.speed.toFixed(0) + ' mm/s';
   }
 
-  // Update triggers
+  // Motion debug
+  if (msg.motion_debug) {
+    const d = msg.motion_debug;
+    document.getElementById('dbgAmp').textContent = d.amp ? d.amp.map(v => v.toFixed(0)).join(' / ') : '--';
+    document.getElementById('dbgFreq').textContent = d.freq ? d.freq.map(v => v.toFixed(2)).join(' / ') : '--';
+    document.getElementById('dbgPhase').textContent = d.phase ? d.phase.map(v => (v * 100).toFixed(0) + '%').join(' / ') : '--';
+
+    document.getElementById('flagHarmonic').style.background =
+      d.mood_harmonic > 0.05 ? 'var(--orange)' : 'var(--border)';
+    document.getElementById('flagPlayful').style.background =
+      d.playful_mod > 0.05 ? 'var(--purple)' : 'var(--border)';
+    document.getElementById('flagJitter').style.background =
+      d.jitter_active ? 'var(--red)' : 'var(--border)';
+
+    document.getElementById('dbgSpeedMult').textContent = (d.speed_mult || 1).toFixed(1) + 'x';
+  }
+
+  // Arm telemetry
+  if (msg.arm) {
+    const a = msg.arm;
+    // State badge
+    const sb = document.getElementById('armStateBadge');
+    sb.textContent = ARM_STATES[a.state] || 'S' + a.state;
+    sb.className = 'arm-state-badge' + (a.error_code ? ' error' : a.warn_code ? ' warn' : '');
+
+    // Queue + TCP speed
+    const qEl = document.getElementById('armQueue');
+    qEl.textContent = 'Q: ' + a.cmd_num;
+    qEl.style.color = a.cmd_num > 300 ? 'var(--red)' : a.cmd_num > 100 ? 'var(--orange)' : '';
+
+    document.getElementById('armTcpSpeed').textContent = 'TCP: ' + a.tcp_speed.toFixed(0) + ' mm/s';
+
+    // Joint table
+    for (let i = 0; i < 6; i++) {
+      document.getElementById('ja' + i).textContent = a.angles[i].toFixed(0) + '\u00B0';
+
+      const tEl = document.getElementById('jt' + i);
+      const temp = a.temperatures[i];
+      tEl.textContent = temp + '\u00B0';
+      tEl.style.color = temp > 50 ? 'var(--red)' : temp > 40 ? 'var(--orange)' : temp > 0 ? 'var(--green)' : '';
+
+      document.getElementById('jc' + i).textContent = a.currents[i].toFixed(1) + 'A';
+    }
+  }
+
+  // Triggers
   updateTriggers(msg.active_triggers || []);
 }
 
-function handleEvent(msg) {
-  addLogEntry(msg);
-}
+function handleEvent(msg) { addLogEntry(msg); }
 
 // ── UI Updates ──
 function updateParamBar(key, value) {
   const row = document.querySelector(`[data-param="${key}"]`);
   if (!row) return;
-
   const bar = row.querySelector('.param-bar');
   const valueEl = row.querySelector('.param-value');
   const color = PARAM_COLORS[key] || 'var(--accent)';
 
   if (BIPOLAR_PARAMS.has(key)) {
-    // Bipolar: -1..1, center at 50%
     const pct = Math.abs(value) * 50;
-    if (value >= 0) {
-      bar.style.left = '50%';
-      bar.style.width = pct + '%';
-    } else {
-      bar.style.left = (50 - pct) + '%';
-      bar.style.width = pct + '%';
-    }
+    bar.style.left = value >= 0 ? '50%' : (50 - pct) + '%';
+    bar.style.width = pct + '%';
     valueEl.textContent = (value >= 0 ? '+' : '') + value.toFixed(2);
   } else {
-    // Unipolar: 0..1
     bar.style.left = '0';
     bar.style.width = (value * 100) + '%';
     valueEl.textContent = value.toFixed(2);
@@ -549,53 +724,36 @@ function updateParamBar(key, value) {
 function updateTriggers(triggers) {
   const container = document.getElementById('triggerChips');
   const noTriggers = document.getElementById('noTriggers');
-
   if (triggers.length === 0) {
     container.innerHTML = '';
     noTriggers.style.display = '';
     return;
   }
-
   noTriggers.style.display = 'none';
-  container.innerHTML = triggers.map(t =>
-    `<span class="trigger-chip">${t}</span>`
-  ).join('');
+  container.innerHTML = triggers.map(t => `<span class="trigger-chip">${t}</span>`).join('');
 }
 
 function addLogEntry(evt) {
   const container = document.getElementById('logEntries');
-
   const entry = document.createElement('div');
   entry.className = 'log-entry';
 
   const ts = evt.timestamp ? new Date(evt.timestamp * 1000) : new Date();
   const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
 
-  let icon = '';
-  let msgClass = '';
   const evtType = evt.event || '';
-  if (evtType === 'FIRED') icon = '🔴';
-  else if (evtType === 'CLEARED') icon = '⚪';
-  else if (evtType === 'BIG_DELTA') icon = '📊';
-  else if (evtType === 'VLM') icon = '🔍';
-  else if (evtType.includes('ERROR')) icon = '❌';
-  else if (evtType === 'COMMAND') icon = '⚡';
-  else icon = '◦';
+  let icon = '\u25E6';
+  if (evtType === 'FIRED') icon = '\uD83D\uDD34';
+  else if (evtType === 'CLEARED') icon = '\u26AA';
+  else if (evtType === 'BIG_DELTA') icon = '\uD83D\uDCCA';
+  else if (evtType === 'VLM') icon = '\uD83D\uDD0D';
+  else if (evtType.includes('ERROR')) icon = '\u274C';
+  else if (evtType === 'COMMAND') icon = '\u26A1';
 
-  entry.innerHTML = `
-    <span class="log-time">${timeStr}</span>
-    <span class="log-type">${icon}</span>
-    <span class="log-msg"><b>${evtType}</b> ${evt.message || ''} ${evt.details || ''}</span>
-  `;
+  entry.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-type">${icon}</span><span class="log-msg"><b>${evtType}</b> ${evt.message || ''} ${evt.details || ''}</span>`;
 
   container.appendChild(entry);
-
-  // Trim old entries
-  while (container.children.length > MAX_LOG_ENTRIES) {
-    container.removeChild(container.firstChild);
-  }
-
-  // Auto-scroll
+  while (container.children.length > MAX_LOG_ENTRIES) container.removeChild(container.firstChild);
   container.scrollTop = container.scrollHeight;
 }
 

@@ -240,7 +240,7 @@ def main():
                 smoothed = state_holder.get()
 
                 if dashboard:
-                    # Push state
+                    # Push state + motion debug
                     t_now = time.time()
                     x, y, z = motion_gen.get_target(t_now, smoothed)
                     speed = motion_gen.get_speed(smoothed)
@@ -248,8 +248,20 @@ def main():
                         raw_state, smoothed,
                         motion_xyz=(x, y, z), speed=speed,
                         vlm_count=call_count, vlm_latency=latency,
+                        motion_debug=motion_gen.get_debug_state(),
                     )
                     dashboard.push_triggers(trigger_engine.active_triggers)
+
+                    # Push VLM scene text
+                    dashboard.push_vlm_text(
+                        perception.last_scene_description,
+                        perception.last_primary_action,
+                    )
+
+                    # Push arm telemetry
+                    telemetry = ctrl.get_telemetry()
+                    if telemetry:
+                        dashboard.push_arm_telemetry(telemetry)
 
                     # Push trigger events
                     for name in newly_fired:
@@ -313,8 +325,12 @@ def main():
                         motion_xyz=(x, y, z), speed=speed,
                         vlm_count=perception.call_count if perception else 0,
                         vlm_latency=0,
+                        motion_debug=motion_gen.get_debug_state(),
                     )
                     dashboard.push_triggers(trigger_engine.active_triggers)
+                    telemetry = ctrl.get_telemetry()
+                    if telemetry:
+                        dashboard.push_arm_telemetry(telemetry)
 
                 last_log = t
 

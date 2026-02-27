@@ -35,6 +35,8 @@ class VLMOutput(BaseModel):
     mood: float = Field(description="Emotional coloring. 0.0=tense/wary, 0.5=neutral, 1.0=playful/joyful")
     presence: float = Field(description="Audience amount. 0.0=empty room, 1.0=many people very close")
     urgency: float = Field(description="Sudden change. 0.0=stable scene, 1.0=dramatic sudden change")
+    scene_description: str = Field(default="", description="Brief scene description in Chinese, max 30 chars. E.g. '一个人坐在桌前看手机'")
+    primary_action: str = Field(default="idle", description="Primary detected action: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown")
 
 
 # ---------- provider abstraction ----------
@@ -201,6 +203,8 @@ class PerceptionThread:
         self._thread = None
         self.call_count = 0
         self.error_count = 0
+        self.last_scene_description = ""
+        self.last_primary_action = "idle"
 
     def start(self):
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -236,9 +240,15 @@ class PerceptionThread:
                 )
                 self.state_holder.update(state)
 
+                # Cache scene text (display-only, not used for motion)
+                self.last_scene_description = str(result.get("scene_description", ""))[:50]
+                self.last_primary_action = str(result.get("primary_action", "idle"))
+
+                scene_tag = f" [{self.last_primary_action}] {self.last_scene_description}" if self.last_scene_description else ""
                 print(f"[VLM] #{self.call_count} ({latency:.1f}s) "
                       f"e={state.energy:.2f} ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
-                      f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}", flush=True)
+                      f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}"
+                      f"{scene_tag}", flush=True)
 
                 if self.on_result:
                     try:

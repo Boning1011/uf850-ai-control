@@ -110,6 +110,25 @@ class ArmController:
         print(f"Connected to {self.ip}, speed={self.speed} mm/s")
         self._print_position()
 
+    def get_telemetry(self):
+        """Read cached arm telemetry. Non-blocking (reads from SDK report buffer)."""
+        if not self.arm:
+            return None
+        try:
+            return {
+                "angles": [round(a, 1) for a in (self.arm.angles or [0]*7)[:6]],
+                "temperatures": list((self.arm.temperatures or [0]*7)[:6]),
+                "currents": [round(c, 2) for c in (self.arm.currents or [0]*7)[:6]],
+                "tcp_speed": round(self.arm.realtime_tcp_speed or 0, 1),
+                "cmd_num": self.arm.cmd_num or 0,
+                "state": self.arm.state or 0,
+                "mode": self.arm.mode or 0,
+                "error_code": self.arm.error_code or 0,
+                "warn_code": self.arm.warn_code or 0,
+            }
+        except Exception:
+            return None
+
     def get_xyz(self):
         code, pos = self.arm.get_position()
         if code == 0:
