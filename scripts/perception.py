@@ -8,6 +8,7 @@ and updates a shared StateHolder with continuous behavioral parameters.
 import collections
 import json
 import os
+import sys
 import time
 import threading
 from abc import ABC, abstractmethod
@@ -143,7 +144,10 @@ class CameraThread:
     def open_camera(self):
         """Open camera on main thread (Windows requires this). Call before start()."""
         print(f"[Camera] Opening device {self.device}...", flush=True)
-        self._cap = cv2.VideoCapture(self.device)
+        if sys.platform == "win32":
+            self._cap = cv2.VideoCapture(self.device, cv2.CAP_DSHOW)
+        else:
+            self._cap = cv2.VideoCapture(self.device)
         if not self._cap.isOpened():
             print(f"[Camera] Failed to open device {self.device}", flush=True)
             return False
