@@ -36,7 +36,7 @@ class VLMOutput(BaseModel):
     mood: float = Field(description="Emotional coloring. 0.0=tense/wary, 0.5=neutral, 1.0=playful/joyful")
     presence: float = Field(description="Audience amount. 0.0=empty room, 1.0=many people very close")
     urgency: float = Field(description="Sudden change. 0.0=stable scene, 1.0=dramatic sudden change")
-    scene_description: str = Field(default="", description="Brief scene description in English, max 15 words. E.g. 'One person sitting at desk looking at phone'")
+    scene_description: str = Field(default="", description="Scene description in English, 20-40 words. Describe who is present, what they are doing, their posture, and spatial arrangement.")
     primary_action: str = Field(default="idle", description="Primary detected action: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown")
 
 
@@ -245,7 +245,7 @@ class PerceptionThread:
                 self.state_holder.update(state)
 
                 # Cache scene text (display-only, not used for motion)
-                self.last_scene_description = str(result.get("scene_description", ""))[:50]
+                self.last_scene_description = str(result.get("scene_description", ""))
                 self.last_primary_action = str(result.get("primary_action", "idle"))
 
                 scene_tag = f" [{self.last_primary_action}] {self.last_scene_description}" if self.last_scene_description else ""

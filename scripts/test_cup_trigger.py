@@ -371,7 +371,7 @@ def main():
                 dashboard.push_state(raw_state, smoothed,
                                      motion_xyz=(x, y, z), speed=spd,
                                      vlm_count=call_count, vlm_latency=latency)
-                dashboard.push_vlm_text(det.description[:50], action)
+                dashboard.push_vlm_text(det.description, action)
 
             # Log
             logger.log(latency, det, mode, (x, y, z), mode_changed)
