@@ -201,6 +201,8 @@ class DashboardServer:
             self._vlm_latency = round(vlm_latency, 2)
             if motion_debug is not None:
                 self._motion_debug = motion_debug
+                if "mode" in motion_debug:
+                    self._current_mode = motion_debug["mode"]
 
     def push_vlm_text(self, scene_description, primary_action):
         """Push VLM scene description text. Called from perception callback."""

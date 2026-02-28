@@ -165,7 +165,7 @@ def main():
         )
 
         def on_command(cmd, msg=None):
-            nonlocal perception, hand_tracker
+            nonlocal perception, hand_tracker, cam
             if msg is None:
                 msg = {}
             if cmd == "pause" and perception:
@@ -181,37 +181,59 @@ def main():
             elif cmd == "set_input_mode":
                 target_mode = msg.get("mode", "vlm")
                 if target_mode == "hand_tracking":
-                    # Switch to hand tracking
+                    # Pause VLM perception
                     if perception:
                         perception.running = False
-                    if hand_tracker is None:
-                        from hand_tracking import HandTrackingThread
+                    # Release VLM camera so hand tracker can use it
+                    if cam:
+                        cam.stop()
+                        cam = None
+                        time.sleep(0.3)
+                    # Stop previous hand tracker if any (thread already exited)
+                    if hand_tracker:
+                        hand_tracker.stop()
+                        hand_tracker = None
+                        time.sleep(0.2)
+                    from hand_tracking import HandTrackingThread
 
-                        def on_hand_result(hand_x, hand_y, hand_z, confidence):
-                            motion_gen.set_hand_target(hand_x, hand_y, hand_z)
-                            dashboard.push_hand_tracking(
-                                hand_x, hand_y, confidence if hand_x is not None else 0.0
-                            )
-
-                        hand_tracker = HandTrackingThread(
-                            frame_buffer=frame_buffer,
-                            device=config.camera_device,
-                            resolution=config.camera_resolution,
-                            jpeg_quality=config.camera_jpeg_quality,
-                            on_result=on_hand_result,
+                    def on_hand_result(hand_x, hand_y, hand_z, confidence):
+                        motion_gen.set_hand_target(hand_x, hand_y, hand_z)
+                        dashboard.push_hand_tracking(
+                            hand_x, hand_y, confidence if hand_x is not None else 0.0
                         )
-                        hand_tracker.open_camera()
-                        hand_tracker.start()
-                    else:
-                        hand_tracker.running = True
+
+                    hand_tracker = HandTrackingThread(
+                        frame_buffer=frame_buffer,
+                        device=config.camera_device,
+                        resolution=config.camera_resolution,
+                        jpeg_quality=config.camera_jpeg_quality,
+                        on_result=on_hand_result,
+                    )
+                    if not hand_tracker.open_camera():
+                        dashboard.push_event("ERROR", "Cannot open camera for hand tracking")
+                        print("[Dashboard] ERROR: Cannot open camera", flush=True)
+                        return
+                    hand_tracker.start()
                     motion_gen.set_mode("TRACK")
                     dashboard.push_event("COMMAND", "Switched to hand tracking")
                     print("[Dashboard] Switched to hand tracking", flush=True)
                 elif target_mode == "vlm":
-                    # Switch back to VLM
+                    # Stop hand tracker and release its camera
                     if hand_tracker:
-                        hand_tracker.running = False
+                        hand_tracker.stop()
+                        hand_tracker = None
+                        time.sleep(0.3)
                         motion_gen.set_hand_target(None, None, None)
+                    # Restart VLM camera
+                    cam = CameraThread(
+                        device=config.camera_device,
+                        resolution=config.camera_resolution,
+                        jpeg_quality=config.camera_jpeg_quality,
+                        frame_buffer=frame_buffer,
+                        target_fps=5.0,
+                    )
+                    cam.open_camera()
+                    cam.start()
                     if perception:
                         perception.running = True
                     motion_gen.set_mode("CALM")
@@ -417,7 +439,7 @@ def main():
                 if perception:
                     vlm_info = f"  vlm#{perception.call_count}"
                 pitch_info = f" P={pitch:.0f}" if pitch != 0 else ""
-                print(f"  [{mode_engine.current_mode}] "
+                print(f"  [{motion_gen.current_mode}] "
                       f"e={state.energy:.2f} m={state.mood:.2f} "
                       f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
                       f"X={x:.0f} Y={y:.0f} Z={z:.0f}{pitch_info} "

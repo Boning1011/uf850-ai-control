@@ -32,8 +32,24 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "hand_landmarker.task")
 
-# Landmark index
+# Landmark indices
 WRIST = 0
+
+# MediaPipe hand skeleton connections (21 landmarks)
+HAND_CONNECTIONS = [
+    # Thumb
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    # Index finger
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    # Middle finger
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    # Ring finger
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    # Pinky
+    (13, 17), (17, 18), (18, 19), (19, 20),
+    # Palm
+    (0, 17),
+]
 
 
 class HandTrackingThread:
@@ -117,26 +133,46 @@ class HandTrackingThread:
                 time.sleep(0.05)
                 continue
 
-            # Push JPEG to frame_buffer for Dashboard camera panel
-            if self.frame_buffer is not None:
-                _, jpeg = cv2.imencode(
-                    '.jpg', frame,
-                    [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
-                )
-                self.frame_buffer.push(jpeg.tobytes())
-
-            # MediaPipe detection
+            # MediaPipe detection (before drawing overlay)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
             timestamp_ms = int((time.perf_counter() - t_start) * 1000)
 
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
-            if result.hand_landmarks and self.on_result:
-                wrist = result.hand_landmarks[0][WRIST]
-                self.on_result(wrist.x, wrist.y, wrist.z, 1.0)
-            elif self.on_result:
-                self.on_result(None, None, None, 0.0)
+            if result.hand_landmarks:
+                landmarks = result.hand_landmarks[0]
+                h, w = frame.shape[:2]
+
+                # Draw skeleton connections
+                for i, j in HAND_CONNECTIONS:
+                    x1, y1 = int(landmarks[i].x * w), int(landmarks[i].y * h)
+                    x2, y2 = int(landmarks[j].x * w), int(landmarks[j].y * h)
+                    cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                # Draw landmark dots
+                for lm in landmarks:
+                    cx, cy = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(frame, (cx, cy), 3, (0, 200, 0), -1)
+
+                # Highlight wrist with larger circle
+                wrist = landmarks[WRIST]
+                wx, wy = int(wrist.x * w), int(wrist.y * h)
+                cv2.circle(frame, (wx, wy), 8, (0, 0, 255), 2)
+
+                if self.on_result:
+                    self.on_result(wrist.x, wrist.y, wrist.z, 1.0)
+            else:
+                if self.on_result:
+                    self.on_result(None, None, None, 0.0)
+
+            # Push JPEG (with overlay) to frame_buffer for Dashboard
+            if self.frame_buffer is not None:
+                _, jpeg = cv2.imencode(
+                    '.jpg', frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
+                )
+                self.frame_buffer.push(jpeg.tobytes())
 
             # ~30 Hz target
             time.sleep(0.033)
