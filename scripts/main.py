@@ -180,21 +180,43 @@ def main():
                 print("[Dashboard] VLM resumed", flush=True)
             elif cmd == "set_input_mode":
                 target_mode = msg.get("mode", "vlm")
-                if target_mode == "hand_tracking":
+                # Run in background thread — camera ops block and would
+                # freeze the async event loop (MJPEG stream + WebSocket).
+                def _do_switch():
+                    nonlocal hand_tracker, cam
+                    try:
+                        if target_mode == "hand_tracking":
+                            _switch_to_hand_tracking()
+                        elif target_mode == "vlm":
+                            _switch_to_vlm()
+                    except Exception as e:
+                        dashboard.push_event("ERROR", f"Mode switch failed: {e}")
+                        print(f"[Dashboard] ERROR: Mode switch failed: {e}", flush=True)
+
+                def _switch_to_hand_tracking():
+                    nonlocal hand_tracker, cam
                     # Pause VLM perception
                     if perception:
                         perception.running = False
-                    # Release VLM camera so hand tracker can use it
+                    # Stop VLM camera (join thread, then release device)
                     if cam:
                         cam.stop()
                         cam = None
-                        time.sleep(0.3)
-                    # Stop previous hand tracker if any (thread already exited)
+                    # Stop previous hand tracker if any
                     if hand_tracker:
                         hand_tracker.stop()
                         hand_tracker = None
-                        time.sleep(0.2)
-                    from hand_tracking import HandTrackingThread
+                    # Check model file before starting
+                    from hand_tracking import HandTrackingThread, MODEL_PATH
+                    if not os.path.exists(MODEL_PATH):
+                        dashboard.push_event("ERROR",
+                            "Hand tracking model not found",
+                            f"Download: curl -L -o models/hand_landmarker.task "
+                            f"\"https://storage.googleapis.com/mediapipe-models/"
+                            f"hand_landmarker/hand_landmarker/float16/latest/"
+                            f"hand_landmarker.task\"")
+                        print(f"[Dashboard] ERROR: Model not found at {MODEL_PATH}", flush=True)
+                        return
 
                     def on_hand_result(hand_x, hand_y, hand_z, confidence):
                         motion_gen.set_hand_target(hand_x, hand_y, hand_z)
@@ -212,17 +234,19 @@ def main():
                     if not hand_tracker.open_camera():
                         dashboard.push_event("ERROR", "Cannot open camera for hand tracking")
                         print("[Dashboard] ERROR: Cannot open camera", flush=True)
+                        hand_tracker = None
                         return
                     hand_tracker.start()
                     motion_gen.set_mode("TRACK")
                     dashboard.push_event("COMMAND", "Switched to hand tracking")
                     print("[Dashboard] Switched to hand tracking", flush=True)
-                elif target_mode == "vlm":
-                    # Stop hand tracker and release its camera
+
+                def _switch_to_vlm():
+                    nonlocal hand_tracker, cam
+                    # Stop hand tracker (join thread, then release camera)
                     if hand_tracker:
                         hand_tracker.stop()
                         hand_tracker = None
-                        time.sleep(0.3)
                         motion_gen.set_hand_target(None, None, None)
                     # Restart VLM camera
                     cam = CameraThread(
@@ -240,6 +264,8 @@ def main():
                     dashboard.set_status("running")
                     dashboard.push_event("COMMAND", "Switched to VLM mode")
                     print("[Dashboard] Switched to VLM mode", flush=True)
+
+                threading.Thread(target=_do_switch, daemon=True).start()
 
         dashboard.on_command = on_command
         dashboard.start()

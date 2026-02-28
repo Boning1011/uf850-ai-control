@@ -99,8 +99,11 @@ class HandTrackingThread:
 
     def stop(self):
         self.running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
         if self._cap:
             self._cap.release()
+            self._cap = None
             print("[HandTrack] Camera released.", flush=True)
 
     def _run(self):
