@@ -13,6 +13,7 @@ Usage:
     python main.py --persona personas/default.yaml --ip 127.0.0.1
     python main.py --no-camera          # mock perception (no webcam)
     python main.py --keyboard           # manual parameter control (no VLM)
+    python main.py --hand-tracking      # MediaPipe hand tracking mode
     python main.py --no-web             # disable dashboard
     python main.py --port 8080          # custom dashboard port
 """
@@ -111,6 +112,8 @@ def main():
                         help="Collision sensitivity 0-5, -1=skip (default: -1)")
     parser.add_argument("--keyboard", action="store_true",
                         help="Manual parameter control instead of VLM")
+    parser.add_argument("--hand-tracking", action="store_true",
+                        help="MediaPipe hand tracking mode (replaces VLM)")
     parser.add_argument("--no-camera", action="store_true",
                         help="Mock camera (gray frames) — VLM still runs but sees nothing")
     parser.add_argument("--no-web", action="store_true",
@@ -147,6 +150,7 @@ def main():
     # Perception components (unless keyboard mode)
     cam = None
     perception = None
+    hand_tracker = None
     frame_buffer = FrameBuffer(maxlen=20)
     mock_thread_flag = [True]
     dashboard = None
@@ -160,7 +164,10 @@ def main():
             port=args.port,
         )
 
-        def on_command(cmd):
+        def on_command(cmd, msg=None):
+            nonlocal perception, hand_tracker
+            if msg is None:
+                msg = {}
             if cmd == "pause" and perception:
                 perception.running = False
                 dashboard.set_status("paused")
@@ -171,6 +178,46 @@ def main():
                 dashboard.set_status("running")
                 dashboard.push_event("COMMAND", "VLM resumed")
                 print("[Dashboard] VLM resumed", flush=True)
+            elif cmd == "set_input_mode":
+                target_mode = msg.get("mode", "vlm")
+                if target_mode == "hand_tracking":
+                    # Switch to hand tracking
+                    if perception:
+                        perception.running = False
+                    if hand_tracker is None:
+                        from hand_tracking import HandTrackingThread
+
+                        def on_hand_result(hand_x, hand_y, hand_z, confidence):
+                            motion_gen.set_hand_target(hand_x, hand_y, hand_z)
+                            dashboard.push_hand_tracking(
+                                hand_x, hand_y, confidence if hand_x is not None else 0.0
+                            )
+
+                        hand_tracker = HandTrackingThread(
+                            frame_buffer=frame_buffer,
+                            device=config.camera_device,
+                            resolution=config.camera_resolution,
+                            jpeg_quality=config.camera_jpeg_quality,
+                            on_result=on_hand_result,
+                        )
+                        hand_tracker.open_camera()
+                        hand_tracker.start()
+                    else:
+                        hand_tracker.running = True
+                    motion_gen.set_mode("TRACK")
+                    dashboard.push_event("COMMAND", "Switched to hand tracking")
+                    print("[Dashboard] Switched to hand tracking", flush=True)
+                elif target_mode == "vlm":
+                    # Switch back to VLM
+                    if hand_tracker:
+                        hand_tracker.running = False
+                        motion_gen.set_hand_target(None, None, None)
+                    if perception:
+                        perception.running = True
+                    motion_gen.set_mode("CALM")
+                    dashboard.set_status("running")
+                    dashboard.push_event("COMMAND", "Switched to VLM mode")
+                    print("[Dashboard] Switched to VLM mode", flush=True)
 
         dashboard.on_command = on_command
         dashboard.start()
@@ -207,6 +254,34 @@ def main():
             print("Keyboard mode active.\n")
             if dashboard:
                 dashboard.push_event("SYSTEM", "Keyboard mode active")
+        elif args.hand_tracking:
+            # Hand tracking mode: MediaPipe hand detection, no VLM
+            from hand_tracking import HandTrackingThread
+
+            motion_gen.set_mode("TRACK")
+
+            def on_hand_result(hand_x, hand_y, hand_z, confidence):
+                motion_gen.set_hand_target(hand_x, hand_y, hand_z)
+                if dashboard and hand_x is not None:
+                    dashboard.push_hand_tracking(hand_x, hand_y, confidence)
+                elif dashboard:
+                    dashboard.push_hand_tracking(None, None, 0.0)
+
+            hand_tracker = HandTrackingThread(
+                frame_buffer=frame_buffer,
+                device=config.camera_device,
+                resolution=config.camera_resolution,
+                jpeg_quality=config.camera_jpeg_quality,
+                on_result=on_hand_result,
+            )
+            if not hand_tracker.open_camera():
+                print("[ERROR] Cannot open camera for hand tracking.")
+                ctrl.disconnect()
+                sys.exit(1)
+            hand_tracker.start()
+            print("Hand tracking mode active.\n")
+            if dashboard:
+                dashboard.push_event("SYSTEM", "Hand tracking started (MediaPipe)")
         else:
             # VLM mode: camera + perception
             provider = GeminiProvider(model=config.vlm_model)
@@ -322,12 +397,11 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # Check for mode changes (from VLM callback or keyboard triggers)
-            mode_engine.update(trigger_engine.active_triggers)
-            motion_gen.set_mode(mode_engine.current_mode)
-
-            # In servo mode, no queue flush needed — velocity clamping handles transitions
-            mode_engine.mode_just_changed = False
+            # In hand tracking mode, skip trigger/mode engine (mode stays TRACK)
+            if motion_gen.current_mode != "TRACK":
+                mode_engine.update(trigger_engine.active_triggers)
+                motion_gen.set_mode(mode_engine.current_mode)
+                mode_engine.mode_just_changed = False
 
             state = state_holder.get()
             x, y, z, pitch = motion_gen.get_target(t, state)
@@ -373,6 +447,8 @@ def main():
     finally:
         if perception:
             perception.stop()
+        if hand_tracker:
+            hand_tracker.stop()
         if cam:
             cam.stop()
         mock_thread_flag[0] = False

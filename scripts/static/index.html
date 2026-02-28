@@ -82,6 +82,30 @@
   .btn:hover { border-color: var(--accent); }
   .btn.pause { border-color: var(--orange); color: var(--orange); }
   .btn.resume { border-color: var(--green); color: var(--green); }
+  .btn.input-mode { font-size: 12px; padding: 3px 10px; }
+  .btn.input-mode.active { border-color: var(--accent); background: #388bfd26; color: var(--accent); }
+
+  .hand-tracking-section {
+    border-top: 1px solid var(--border);
+    padding: 6px 12px;
+  }
+  .hand-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 12px;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .hand-info .label { color: var(--text-dim); }
+  .hand-info .value { text-align: right; font-variant-numeric: tabular-nums; }
+  .hand-status-badge {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .hand-status-badge.detected { background: #3fb95026; color: var(--green); }
+  .hand-status-badge.lost { background: #30363d; color: var(--text-dim); }
 
   .vlm-badge { color: var(--text-dim); font-size: 13px; }
 
@@ -369,6 +393,7 @@
   .mode-badge.PLAYFUL { background: #bc8cff26; color: var(--purple); }
   .mode-badge.TENSE { background: #d2992226; color: var(--orange); }
   .mode-badge.DORMANT { background: #21262d; color: #484f58; }
+  .mode-badge.TRACK { background: #3fb95026; color: var(--green); }
   .mode-badge.IDLE { background: #30363d; color: var(--text-dim); }
 
   .mode-transition-arrow {
@@ -458,6 +483,8 @@
     <h1>UF850 Dashboard</h1>
     <span class="status-badge connecting" id="statusBadge">CONNECTING</span>
     <div class="header-right">
+      <button class="btn input-mode active" id="btnVLM" onclick="switchInputMode('vlm')">VLM</button>
+      <button class="btn input-mode" id="btnHandTrack" onclick="switchInputMode('hand_tracking')">Hand Track</button>
       <span class="vlm-badge" id="vlmBadge">VLM: --</span>
       <button class="btn pause" id="btnPause" onclick="sendCommand('pause')">Pause VLM</button>
       <button class="btn resume" id="btnResume" onclick="sendCommand('resume')" style="display:none">Resume VLM</button>
@@ -608,6 +635,17 @@
         </div>
         <div class="mode-transition-detail" id="modeTransitionDetail">No transitions yet</div>
         <div class="mode-history" id="modeHistory"></div>
+      </div>
+
+      <!-- Hand Tracking -->
+      <div class="hand-tracking-section" id="handTrackingSection">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Hand Tracking</div>
+        <span class="hand-status-badge lost" id="handStatusBadge">No Hand</span>
+        <div class="hand-info">
+          <span class="label">Hand X</span><span class="value" id="handX">--</span>
+          <span class="label">Hand Y</span><span class="value" id="handY">--</span>
+          <span class="label">Confidence</span><span class="value" id="handConf">--</span>
+        </div>
       </div>
 
     </div>
@@ -782,6 +820,20 @@ function handleState(msg) {
   if (msg.current_mode !== undefined) {
     updateMode(msg.current_mode, msg.mode_history || []);
   }
+
+  // Hand tracking
+  if (msg.hand_tracking) {
+    updateHandTracking(msg.hand_tracking);
+  }
+
+  // Input mode buttons
+  if (msg.current_mode === 'TRACK') {
+    document.getElementById('btnHandTrack').classList.add('active');
+    document.getElementById('btnVLM').classList.remove('active');
+  } else {
+    document.getElementById('btnVLM').classList.add('active');
+    document.getElementById('btnHandTrack').classList.remove('active');
+  }
 }
 
 function handleEvent(msg) { addLogEntry(msg); }
@@ -869,6 +921,29 @@ function addLogEntry(evt) {
   container.appendChild(entry);
   while (container.children.length > MAX_LOG_ENTRIES) container.removeChild(container.firstChild);
   container.scrollTop = container.scrollHeight;
+}
+
+function updateHandTracking(ht) {
+  const badge = document.getElementById('handStatusBadge');
+  if (ht.active) {
+    badge.textContent = 'Hand Detected';
+    badge.className = 'hand-status-badge detected';
+    document.getElementById('handX').textContent = ht.x.toFixed(3);
+    document.getElementById('handY').textContent = ht.y.toFixed(3);
+    document.getElementById('handConf').textContent = ht.confidence.toFixed(2);
+  } else {
+    badge.textContent = 'No Hand';
+    badge.className = 'hand-status-badge lost';
+    document.getElementById('handX').textContent = '--';
+    document.getElementById('handY').textContent = '--';
+    document.getElementById('handConf').textContent = '--';
+  }
+}
+
+function switchInputMode(mode) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ command: 'set_input_mode', mode: mode }));
+  }
 }
 
 // ── Init ──

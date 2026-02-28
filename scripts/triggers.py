@@ -95,7 +95,7 @@ class ModeEngine:
     main loop to flush the arm command queue for a snappy transition.
     """
 
-    VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT"}
+    VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT", "TRACK"}
 
     # Priority-ordered rules: first match wins (highest priority first)
     TRIGGER_RULES = [

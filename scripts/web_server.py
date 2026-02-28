@@ -46,6 +46,7 @@ class DashboardServer:
         self._arm_telemetry = None
         self._current_mode = "IDLE"
         self._mode_history = []  # [{time, from_mode, to_mode, action, confidence}]
+        self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -120,6 +121,7 @@ class DashboardServer:
                             "active_triggers": server._active_triggers,
                             "current_mode": server._current_mode,
                             "mode_history": server._mode_history[-10:],
+                            "hand_tracking": server._hand_tracking,
                             "status": server._pipeline_status,
                         }
 
@@ -137,7 +139,7 @@ class DashboardServer:
                         msg = json.loads(data)
                         cmd = msg.get("command")
                         if cmd and server.on_command:
-                            server.on_command(cmd)
+                            server.on_command(cmd, msg)
                     except (json.JSONDecodeError, Exception):
                         pass
 
@@ -210,6 +212,19 @@ class DashboardServer:
         """Push arm physical telemetry dict. Called from main loop."""
         with self._lock:
             self._arm_telemetry = telemetry
+
+    def push_hand_tracking(self, hand_x, hand_y, confidence):
+        """Push hand tracking state. Called from hand tracking callback."""
+        with self._lock:
+            if hand_x is not None:
+                self._hand_tracking = {
+                    "x": round(hand_x, 3),
+                    "y": round(hand_y, 3),
+                    "confidence": round(confidence, 2),
+                    "active": True,
+                }
+            else:
+                self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
 
     def push_triggers(self, active_triggers):
         """Update active trigger list. Called after TriggerEngine.check()."""

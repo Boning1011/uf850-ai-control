@@ -8,6 +8,7 @@ Each mode has its own motion generator producing qualitatively different movemen
   PLAYFUL:  extend forward + rapid J5 pitch oscillation (head nod)
   TENSE:    reach high on Z axis (stretch up, small trembling)
   DORMANT:  contracted low, barely moving (sleeping)
+  TRACK:    real-time hand tracking via MediaPipe (follow hand position)
 
 Mode transitions are instant — no blending. Arm snaps to new pattern
 with a speed boost during the first 0.8 seconds after switch.
@@ -41,6 +42,7 @@ class ParametricMotionGenerator:
         "PLAYFUL":  (250, 700),
         "TENSE":    (180, 700),
         "DORMANT":  (50, 400),
+        "TRACK":    (300, 700),
     }
 
     TRANSITION_BOOST_DURATION = 0.8  # seconds of high speed after mode switch
@@ -50,6 +52,7 @@ class ParametricMotionGenerator:
         self._mode = "CALM"
         self._mode_switch_time = 0.0
         self._debug = {}
+        self._hand_target = None  # (x, y, z) in arm mm, set by hand tracking
 
     def set_mode(self, mode_name):
         """Switch to a new mode. Resets transition timer for speed boost."""
@@ -86,32 +89,26 @@ class ParametricMotionGenerator:
 
         return x, y, z, pitch
 
-    def get_speed(self, state):
-        """Compute arm speed (mm/s). Uses transition boost after mode switch."""
-        normal_speed, boost_speed = self.MODE_SPEEDS.get(
-            self._mode, (150, 600)
-        )
-
-        # Transition boost: high speed right after mode switch
-        elapsed = time.monotonic() - self._mode_switch_time
-        if elapsed < self.TRANSITION_BOOST_DURATION:
-            # Fast linear ramp-down from boost to normal
-            blend = elapsed / self.TRANSITION_BOOST_DURATION
-            speed = _lerp(boost_speed, normal_speed, blend)
-        else:
-            speed = normal_speed
-
-        # Energy also modulates speed (subtle, ±30%)
-        energy_mult = _lerp(0.7, 1.3, state.energy)
-        speed *= energy_mult
-
-        self._debug["speed"] = round(speed, 1)
-        self._debug["transition_boost"] = elapsed < self.TRANSITION_BOOST_DURATION
-        return speed
-
     def get_debug_state(self):
         """Return last-computed motion debug state."""
         return self._debug.copy() if self._debug else {}
+
+    def set_hand_target(self, hand_x, hand_y, hand_z):
+        """Set hand tracking target from normalised coords (0-1).
+
+        Maps camera pixel space to arm Cartesian workspace:
+          hand_x (horizontal) -> arm Y (mirrored: camera left = arm right)
+          hand_y (vertical, 0=top) -> arm Z (inverted: top = high Z)
+          arm X: fixed at comfortable forward reach
+        """
+        if hand_x is None:
+            self._hand_target = None
+            return
+        cfg = self.cfg
+        arm_y = _lerp(cfg.bounds_y[1], cfg.bounds_y[0], hand_x)
+        arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
+        arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
+        self._hand_target = (arm_x, arm_y, arm_z)
 
     # ------------------------------------------------------------------
     # Mode-specific motion generators
@@ -278,3 +275,104 @@ class ParametricMotionGenerator:
         self._debug["pattern"] = "sleeping"
 
         return x, y, z, 0
+
+    def _motion_track(self, t, state):
+        """Direct hand tracking — follow hand position in real time.
+
+        If no hand detected, falls back to calm breathing at center.
+        Includes RPY lean at boundaries and soft margin deceleration.
+        """
+        if self._hand_target is None:
+            return self._motion_calm(t, state)
+
+        x, y, z = self._hand_target
+        cfg = self.cfg
+
+        # Tiny breathing overlay keeps the arm feeling alive
+        x += 3 * math.sin(2 * math.pi * 0.3 * t)
+        z += 5 * math.sin(2 * math.pi * 0.2 * t)
+
+        # ── RPY lean: tilt toward target when near boundary ──
+        # Creates body language: "reaching but can't quite get there"
+        pitch = 0
+        margin = 40  # mm from boundary where lean starts
+
+        # Lean pitch down when near high Z boundary (reaching up)
+        z_headroom_hi = cfg.bounds_z[1] - z
+        z_headroom_lo = z - cfg.bounds_z[0]
+        if z_headroom_hi < margin:
+            lean = (1.0 - z_headroom_hi / margin)  # 0..1
+            pitch += lean * 20  # tilt up to +20 degrees
+        elif z_headroom_lo < margin:
+            lean = (1.0 - z_headroom_lo / margin)
+            pitch -= lean * 15  # tilt down
+
+        # Y-axis proximity could add roll, but roll is fixed at 180
+        # so we add a small pitch modulation for side-reaching too
+        y_headroom_pos = cfg.bounds_y[1] - y
+        y_headroom_neg = y - cfg.bounds_y[0]
+        if y_headroom_pos < margin:
+            lean = (1.0 - y_headroom_pos / margin)
+            pitch += lean * 10
+        elif y_headroom_neg < margin:
+            lean = (1.0 - y_headroom_neg / margin)
+            pitch -= lean * 10
+
+        self._debug["pattern"] = "hand_track"
+        self._debug["hand_target"] = [round(self._hand_target[0], 1),
+                                       round(self._hand_target[1], 1),
+                                       round(self._hand_target[2], 1)]
+        self._debug["lean_pitch"] = round(pitch, 1)
+
+        return x, y, z, pitch
+
+    def get_speed(self, state):
+        """Compute arm speed (mm/s). Uses transition boost after mode switch.
+
+        In TRACK mode, applies soft margin deceleration near workspace boundaries.
+        """
+        normal_speed, boost_speed = self.MODE_SPEEDS.get(
+            self._mode, (150, 600)
+        )
+
+        # Transition boost: high speed right after mode switch
+        elapsed = time.monotonic() - self._mode_switch_time
+        if elapsed < self.TRANSITION_BOOST_DURATION:
+            blend = elapsed / self.TRANSITION_BOOST_DURATION
+            speed = _lerp(boost_speed, normal_speed, blend)
+        else:
+            speed = normal_speed
+
+        # Energy also modulates speed (subtle, +/-30%)
+        energy_mult = _lerp(0.7, 1.3, state.energy)
+        speed *= energy_mult
+
+        # ── Soft margin deceleration (TRACK mode only) ──
+        if self._mode == "TRACK" and self._hand_target is not None:
+            cfg = self.cfg
+            x, y, z = self._hand_target
+            margin_width = 50  # mm from boundary where deceleration starts
+            min_speed_frac = 0.3  # slow to 30% at boundary
+
+            def _margin_factor(val, lo, hi):
+                d = min(val - lo, hi - val)
+                if d >= margin_width:
+                    return 1.0
+                if d <= 0:
+                    return min_speed_frac
+                t = d / margin_width
+                # smoothstep: 3t^2 - 2t^3
+                smooth = t * t * (3 - 2 * t)
+                return min_speed_frac + (1.0 - min_speed_frac) * smooth
+
+            f = min(
+                _margin_factor(x, cfg.bounds_x[0], cfg.bounds_x[1]),
+                _margin_factor(y, cfg.bounds_y[0], cfg.bounds_y[1]),
+                _margin_factor(z, cfg.bounds_z[0], cfg.bounds_z[1]),
+            )
+            speed *= f
+            self._debug["soft_margin_factor"] = round(f, 2)
+
+        self._debug["speed"] = round(speed, 1)
+        self._debug["transition_boost"] = elapsed < self.TRANSITION_BOOST_DURATION
+        return speed
