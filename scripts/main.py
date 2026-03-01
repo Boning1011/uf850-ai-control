@@ -1,21 +1,18 @@
 """
 AI-Driven Arm Control — Full Pipeline
 
-Camera -> VLM Perception -> Continuous Parameters -> Parameterized Motion -> Arm
+Default mode: Hand Tracking (MediaPipe).
+Optional: VLM Perception mode (Camera -> Gemini -> Continuous Parameters -> Arm).
 
-Includes a web dashboard at http://localhost:7860 for real-time monitoring:
-  - Live camera feed (MJPEG)
-  - VLM parameter bars
-  - Trigger events
-  - Pipeline control (pause/resume VLM)
+Includes a web dashboard at http://localhost:7860 for real-time monitoring.
 
 Usage:
-    python main.py --persona personas/default.yaml --ip 127.0.0.1
-    python main.py --no-camera          # mock perception (no webcam)
-    python main.py --keyboard           # manual parameter control (no VLM)
-    python main.py --hand-tracking      # MediaPipe hand tracking mode
-    python main.py --no-web             # disable dashboard
-    python main.py --port 8080          # custom dashboard port
+    python main.py --ip 127.0.0.1       # hand tracking (default)
+    python main.py --vlm                 # VLM perception mode
+    python main.py --vlm --no-camera     # VLM with mock camera
+    python main.py --keyboard            # manual parameter control (no VLM)
+    python main.py --no-web              # disable dashboard
+    python main.py --port 8080           # custom dashboard port
 """
 
 import argparse
@@ -160,8 +157,8 @@ def main():
                         help="Collision sensitivity 0-5, -1=skip (default: -1)")
     parser.add_argument("--keyboard", action="store_true",
                         help="Manual parameter control instead of VLM")
-    parser.add_argument("--hand-tracking", action="store_true",
-                        help="MediaPipe hand tracking mode (replaces VLM)")
+    parser.add_argument("--vlm", action="store_true",
+                        help="VLM perception mode (Gemini) instead of hand tracking")
     parser.add_argument("--no-camera", action="store_true",
                         help="Mock camera (gray frames) — VLM still runs but sees nothing")
     parser.add_argument("--no-web", action="store_true",
@@ -291,6 +288,7 @@ def main():
                         return
                     hand_tracker.start()
                     motion_gen.set_mode("TRACK")
+                    dashboard.push_input_mode("hand_tracking")
                     dashboard.push_event("COMMAND", "Switched to hand tracking")
                     print("[Dashboard] Switched to hand tracking", flush=True)
 
@@ -316,6 +314,7 @@ def main():
                         perception.running = True
                     motion_gen.set_mode("CALM")
                     dashboard.set_status("running")
+                    dashboard.push_input_mode("vlm")
                     dashboard.push_event("COMMAND", "Switched to VLM mode")
                     print("[Dashboard] Switched to VLM mode", flush=True)
 
@@ -335,6 +334,17 @@ def main():
 
         # Switch to servo mode for real-time streaming control
         ctrl.enable_servo()
+
+        # Determine initial input mode
+        if args.keyboard:
+            initial_input_mode = "keyboard"
+        elif args.vlm:
+            initial_input_mode = "vlm"
+        else:
+            initial_input_mode = "hand_tracking"
+
+        if dashboard:
+            dashboard.push_input_mode(initial_input_mode)
 
         if args.keyboard:
             # Keyboard mode: no camera, no VLM
@@ -356,31 +366,7 @@ def main():
             print("Keyboard mode active.\n")
             if dashboard:
                 dashboard.push_event("SYSTEM", "Keyboard mode active")
-        elif args.hand_tracking:
-            # Hand tracking mode: MediaPipe hand detection, no VLM
-            from hand_tracking import HandTrackingThread
-
-            motion_gen.set_mode("TRACK")
-
-            def on_hand_result(hands):
-                _dispatch_hands(hands, motion_gen, dashboard)
-
-            hand_tracker = HandTrackingThread(
-                frame_buffer=frame_buffer,
-                device=config.camera_device,
-                resolution=config.camera_resolution,
-                jpeg_quality=config.camera_jpeg_quality,
-                on_result=on_hand_result,
-            )
-            if not hand_tracker.open_camera():
-                print("[ERROR] Cannot open camera for hand tracking.")
-                ctrl.disconnect()
-                sys.exit(1)
-            hand_tracker.start()
-            print("Hand tracking mode active.\n")
-            if dashboard:
-                dashboard.push_event("SYSTEM", "Hand tracking started (MediaPipe)")
-        else:
+        elif args.vlm:
             # VLM mode: camera + perception
             provider = GeminiProvider(model=config.vlm_model)
 
@@ -483,6 +469,30 @@ def main():
             print(f"VLM perception active ({config.vlm_rate_hz} Hz).\n")
             if dashboard:
                 dashboard.push_event("SYSTEM", f"VLM started ({config.vlm_model} @ {config.vlm_rate_hz} Hz)")
+        else:
+            # Hand tracking mode (default): MediaPipe hand detection, no VLM
+            from hand_tracking import HandTrackingThread
+
+            motion_gen.set_mode("TRACK")
+
+            def on_hand_result(hands):
+                _dispatch_hands(hands, motion_gen, dashboard)
+
+            hand_tracker = HandTrackingThread(
+                frame_buffer=frame_buffer,
+                device=config.camera_device,
+                resolution=config.camera_resolution,
+                jpeg_quality=config.camera_jpeg_quality,
+                on_result=on_hand_result,
+            )
+            if not hand_tracker.open_camera():
+                print("[ERROR] Cannot open camera for hand tracking.")
+                ctrl.disconnect()
+                sys.exit(1)
+            hand_tracker.start()
+            print("Hand tracking mode active.\n")
+            if dashboard:
+                dashboard.push_event("SYSTEM", "Hand tracking started (MediaPipe)")
 
         # --- Main control loop @ 25 Hz ---
         print("Running (Ctrl+C to stop)\n")

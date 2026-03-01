@@ -47,6 +47,7 @@ class DashboardServer:
         self._current_mode = "IDLE"
         self._mode_history = []  # [{time, from_mode, to_mode, action, confidence}]
         self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
+        self._input_mode = "hand_tracking"  # "vlm" | "hand_tracking" | "keyboard"
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -122,6 +123,7 @@ class DashboardServer:
                             "current_mode": server._current_mode,
                             "mode_history": server._mode_history[-10:],
                             "hand_tracking": server._hand_tracking,
+                            "input_mode": server._input_mode,
                             "status": server._pipeline_status,
                         }
 
@@ -214,6 +216,11 @@ class DashboardServer:
         """Push arm physical telemetry dict. Called from main loop."""
         with self._lock:
             self._arm_telemetry = telemetry
+
+    def push_input_mode(self, mode):
+        """Set the active input mode: 'vlm', 'hand_tracking', or 'keyboard'."""
+        with self._lock:
+            self._input_mode = mode
 
     def push_hand_tracking(self, hand_x, hand_y, confidence):
         """Push hand tracking state. Called from hand tracking callback."""

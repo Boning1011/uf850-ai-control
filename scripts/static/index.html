@@ -469,6 +469,10 @@
   }
   .ws-indicator.connected { background: var(--green); }
 
+  /* Input-mode tab visibility */
+  body[data-input-mode="hand_tracking"] .vlm-only { display: none !important; }
+  body[data-input-mode="vlm"] .ht-only { display: none !important; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -476,18 +480,18 @@
   ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 </style>
 </head>
-<body>
+<body data-input-mode="hand_tracking">
 <div class="dashboard">
   <!-- Header -->
   <div class="header">
     <h1>UF850 Dashboard</h1>
     <span class="status-badge connecting" id="statusBadge">CONNECTING</span>
     <div class="header-right">
-      <button class="btn input-mode active" id="btnVLM" onclick="switchInputMode('vlm')">VLM</button>
-      <button class="btn input-mode" id="btnHandTrack" onclick="switchInputMode('hand_tracking')">Hand Track</button>
-      <span class="vlm-badge" id="vlmBadge">VLM: --</span>
-      <button class="btn pause" id="btnPause" onclick="sendCommand('pause')">Pause VLM</button>
-      <button class="btn resume" id="btnResume" onclick="sendCommand('resume')" style="display:none">Resume VLM</button>
+      <button class="btn input-mode" id="btnVLM" onclick="switchInputMode('vlm')">VLM</button>
+      <button class="btn input-mode active" id="btnHandTrack" onclick="switchInputMode('hand_tracking')">Hand Track</button>
+      <span class="vlm-badge vlm-only" id="vlmBadge">VLM: --</span>
+      <button class="btn pause vlm-only" id="btnPause" onclick="sendCommand('pause')">Pause VLM</button>
+      <button class="btn resume vlm-only" id="btnResume" onclick="sendCommand('resume')" style="display:none">Resume VLM</button>
     </div>
   </div>
 
@@ -503,9 +507,20 @@
 
     <!-- Right sidebar -->
     <div class="sidebar">
-      <!-- VLM Parameters -->
-      <div class="section-title">VLM Parameters</div>
-      <div class="params" id="params">
+      <!-- Hand Tracking (shown only in hand tracking mode) -->
+      <div class="hand-tracking-section ht-only" id="handTrackingSection">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Hand Tracking</div>
+        <span class="hand-status-badge lost" id="handStatusBadge">No Hand</span>
+        <div class="hand-info">
+          <span class="label">Hand X</span><span class="value" id="handX">--</span>
+          <span class="label">Hand Y</span><span class="value" id="handY">--</span>
+          <span class="label">Confidence</span><span class="value" id="handConf">--</span>
+        </div>
+      </div>
+
+      <!-- VLM Parameters (VLM mode only) -->
+      <div class="section-title vlm-only">VLM Parameters</div>
+      <div class="params vlm-only" id="params">
         <div class="param-row" data-param="energy">
           <span class="param-label">energy</span>
           <div class="param-bar-container">
@@ -552,8 +567,8 @@
         </div>
       </div>
 
-      <!-- VLM Scene -->
-      <div class="scene-section">
+      <!-- VLM Scene (VLM mode only) -->
+      <div class="scene-section vlm-only">
         <div class="section-title" style="padding:0;border:none;margin-bottom:4px">VLM Scene</div>
         <div class="scene-content">
           <span class="action-badge" id="actionBadge">idle</span>
@@ -570,8 +585,8 @@
         <span class="label">Speed</span><span class="value" id="motionSpeed">--</span>
       </div>
 
-      <!-- Motion Debug -->
-      <div class="motion-debug" id="motionDebug">
+      <!-- Motion Debug (VLM mode only) -->
+      <div class="motion-debug vlm-only" id="motionDebug">
         <div class="debug-grid">
           <span class="label">Amp</span><span class="value" id="dbgAmp">--</span>
           <span class="label">Freq</span><span class="value" id="dbgFreq">--</span>
@@ -617,8 +632,8 @@
         </div>
       </div>
 
-      <!-- Active Triggers -->
-      <div class="triggers-section">
+      <!-- Active Triggers (VLM mode only) -->
+      <div class="triggers-section vlm-only">
         <div class="triggers-header">Active Triggers</div>
         <div id="triggersContainer">
           <div class="no-triggers" id="noTriggers">(none)</div>
@@ -635,17 +650,6 @@
         </div>
         <div class="mode-transition-detail" id="modeTransitionDetail">No transitions yet</div>
         <div class="mode-history" id="modeHistory"></div>
-      </div>
-
-      <!-- Hand Tracking -->
-      <div class="hand-tracking-section" id="handTrackingSection">
-        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Hand Tracking</div>
-        <span class="hand-status-badge lost" id="handStatusBadge">No Hand</span>
-        <div class="hand-info">
-          <span class="label">Hand X</span><span class="value" id="handX">--</span>
-          <span class="label">Hand Y</span><span class="value" id="handY">--</span>
-          <span class="label">Confidence</span><span class="value" id="handConf">--</span>
-        </div>
       </div>
 
     </div>
@@ -826,13 +830,16 @@ function handleState(msg) {
     updateHandTracking(msg.hand_tracking);
   }
 
-  // Input mode buttons
-  if (msg.current_mode === 'TRACK') {
-    document.getElementById('btnHandTrack').classList.add('active');
-    document.getElementById('btnVLM').classList.remove('active');
-  } else {
-    document.getElementById('btnVLM').classList.add('active');
-    document.getElementById('btnHandTrack').classList.remove('active');
+  // Input mode: update body attribute for CSS tab switching + button highlight
+  if (msg.input_mode) {
+    document.body.dataset.inputMode = msg.input_mode;
+    if (msg.input_mode === 'hand_tracking') {
+      document.getElementById('btnHandTrack').classList.add('active');
+      document.getElementById('btnVLM').classList.remove('active');
+    } else {
+      document.getElementById('btnVLM').classList.add('active');
+      document.getElementById('btnHandTrack').classList.remove('active');
+    }
   }
 }
 
