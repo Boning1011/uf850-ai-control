@@ -104,6 +104,54 @@ def mock_camera_fill(frame_buffer, running_flag):
         time.sleep(0.2)
 
 
+def _dispatch_hands(hands, motion_gen, dashboard=None):
+    """Route multi-hand tracking data to motion generator.
+
+    Single hand  -> position control (original behaviour)
+    Two hands    -> right hand = position, left hand = RPY orientation
+    No hands     -> clear targets (fallback to calm breathing)
+
+    Handedness note (mirrored video):
+      MediaPipe "Left"  = user's RIGHT hand  -> position control
+      MediaPipe "Right" = user's LEFT hand   -> RPY control
+    """
+    if not hands:
+        motion_gen.set_hand_target(None, None, None)
+        motion_gen.set_hand_rpy_input(None, None)
+        if dashboard:
+            dashboard.push_hand_tracking(None, None, 0.0)
+        return
+
+    if len(hands) == 1:
+        # Single hand: always controls position, clear RPY
+        h = hands[0]
+        motion_gen.set_hand_target(h["x"], h["y"], h["z"])
+        motion_gen.set_hand_rpy_input(None, None)
+        if dashboard:
+            dashboard.push_hand_tracking(h["x"], h["y"], h["confidence"])
+        return
+
+    # Two hands: identify by MediaPipe handedness label
+    pos_hand = None
+    rpy_hand = None
+    for h in hands:
+        if h["label"] == "Left":   # user's right hand (mirrored)
+            pos_hand = h
+        else:
+            rpy_hand = h
+
+    # Fallback if both have the same label
+    if pos_hand is None:
+        pos_hand = hands[0]
+    if rpy_hand is None:
+        rpy_hand = hands[1]
+
+    motion_gen.set_hand_target(pos_hand["x"], pos_hand["y"], pos_hand["z"])
+    motion_gen.set_hand_rpy_input(rpy_hand["x"], rpy_hand["y"])
+    if dashboard:
+        dashboard.push_hand_tracking(pos_hand["x"], pos_hand["y"], pos_hand["confidence"])
+
+
 def main():
     parser = argparse.ArgumentParser(description="AI-Driven Arm Control")
     parser.add_argument("--ip", default="127.0.0.1", help="Arm IP address")
@@ -226,11 +274,8 @@ def main():
                         print(f"[Dashboard] ERROR: Model not found at {MODEL_PATH}", flush=True)
                         return
 
-                    def on_hand_result(hand_x, hand_y, hand_z, confidence):
-                        motion_gen.set_hand_target(hand_x, hand_y, hand_z)
-                        dashboard.push_hand_tracking(
-                            hand_x, hand_y, confidence if hand_x is not None else 0.0
-                        )
+                    def on_hand_result(hands):
+                        _dispatch_hands(hands, motion_gen, dashboard)
 
                     hand_tracker = HandTrackingThread(
                         frame_buffer=frame_buffer,
@@ -317,12 +362,8 @@ def main():
 
             motion_gen.set_mode("TRACK")
 
-            def on_hand_result(hand_x, hand_y, hand_z, confidence):
-                motion_gen.set_hand_target(hand_x, hand_y, hand_z)
-                if dashboard and hand_x is not None:
-                    dashboard.push_hand_tracking(hand_x, hand_y, confidence)
-                elif dashboard:
-                    dashboard.push_hand_tracking(None, None, 0.0)
+            def on_hand_result(hands):
+                _dispatch_hands(hands, motion_gen, dashboard)
 
             hand_tracker = HandTrackingThread(
                 frame_buffer=frame_buffer,
@@ -395,7 +436,7 @@ def main():
                 if dashboard:
                     # Push state + motion debug
                     t_now = time.time()
-                    x, y, z, _pitch = motion_gen.get_target(t_now, smoothed)
+                    x, y, z, _pitch, _yaw = motion_gen.get_target(t_now, smoothed)
                     speed = motion_gen.get_speed(smoothed)
                     dashboard.push_state(
                         raw_state, smoothed,
@@ -475,10 +516,10 @@ def main():
                 mode_engine.mode_just_changed = False
 
             state = state_holder.get()
-            x, y, z, pitch = motion_gen.get_target(t, state)
+            x, y, z, pitch, yaw = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
 
-            ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, dt=DT)
+            ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, yaw=yaw, dt=DT)
             if ret == -2:
                 time.sleep(0.2)
                 continue
@@ -488,10 +529,11 @@ def main():
                 if perception:
                     vlm_info = f"  vlm#{perception.call_count}"
                 pitch_info = f" P={pitch:.0f}" if pitch != 0 else ""
+                yaw_info = f" W={yaw:.0f}" if yaw != 0 else ""
                 print(f"  [{motion_gen.current_mode}] "
                       f"e={state.energy:.2f} m={state.mood:.2f} "
                       f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
-                      f"X={x:.0f} Y={y:.0f} Z={z:.0f}{pitch_info} "
+                      f"X={x:.0f} Y={y:.0f} Z={z:.0f}{pitch_info}{yaw_info} "
                       f"spd={speed:.0f}{vlm_info}")
 
                 # Push state to dashboard periodically (even without VLM updates)

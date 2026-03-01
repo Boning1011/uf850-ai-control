@@ -145,20 +145,22 @@ class ArmController:
         z = max(self.bounds_z[0], min(self.bounds_z[1], z))
         return x, y, z
 
-    def send_position(self, x, y, z, speed=None, pitch=None):
+    def send_position(self, x, y, z, speed=None, pitch=None, yaw=None):
         """Send a clamped position command. Returns SDK return code.
 
         Args:
             x, y, z: target position in mm
             speed: mm/s (default: self.speed)
             pitch: tool pitch in degrees (default: from self.rpy[1]).
-                   Used for J5 control — e.g. ±35° for head nod.
+            yaw: tool yaw in degrees (default: from self.rpy[2]).
         """
         x, y, z = self.clamp_position(x, y, z)
         spd = speed if speed is not None else self.speed
         r, p, w = self.rpy
         if pitch is not None:
             p = pitch
+        if yaw is not None:
+            w = yaw
         return self.arm.set_position(x, y, z, r, p, w, speed=spd, wait=False)
 
     def move_to_center(self, speed=50):
@@ -244,7 +246,7 @@ class ArmController:
             cx, cy, cz = self.center
             self._last_servo_pos = [cx, cy, cz, r, p, w]
 
-    def send_servo(self, x, y, z, speed=None, pitch=None, dt=0.04):
+    def send_servo(self, x, y, z, speed=None, pitch=None, yaw=None, dt=0.04):
         """Send velocity-clamped servo command.
 
         Speed is used for velocity clamping: max_mm_per_frame = speed * dt.
@@ -255,6 +257,7 @@ class ArmController:
             x, y, z: target position in mm
             speed: desired speed in mm/s (for velocity clamping)
             pitch: tool pitch in degrees (default: from self.rpy[1])
+            yaw: tool yaw in degrees (default: from self.rpy[2])
             dt: control loop timestep in seconds
         Returns:
             SDK return code, -2 if arm not in servo mode
@@ -270,6 +273,8 @@ class ArmController:
         r, p, w = self.rpy
         if pitch is not None:
             p = pitch
+        if yaw is not None:
+            w = yaw
 
         target = [x, y, z, r, p, w]
 

@@ -28,10 +28,10 @@ def _clamp(v, lo, hi):
 
 
 class ParametricMotionGenerator:
-    """Generate (x, y, z, pitch) targets from mode + continuous state + time.
+    """Generate (x, y, z, pitch, yaw) targets from mode + continuous state + time.
 
     Each mode is a distinct motion pattern, not just scaled multipliers.
-    Returns pitch for J5 control (default 0 = tool pointing down with roll=180).
+    Returns pitch/yaw for orientation control (default 0 = tool pointing down with roll=180).
     """
 
     # Speed (mm/s) per mode: (normal, transition_boost)
@@ -53,6 +53,7 @@ class ParametricMotionGenerator:
         self._mode_switch_time = 0.0
         self._debug = {}
         self._hand_target = None  # (x, y, z) in arm mm, set by hand tracking
+        self._hand_rpy_target = None  # (pitch, yaw) from second hand, or None
 
     def set_mode(self, mode_name):
         """Switch to a new mode. Resets transition timer for speed boost."""
@@ -65,19 +66,24 @@ class ParametricMotionGenerator:
         return self._mode
 
     def get_target(self, t, state):
-        """Compute (x, y, z, pitch) for current mode.
+        """Compute (x, y, z, pitch, yaw) for current mode.
 
         Args:
             t: elapsed time in seconds (monotonic phase driver)
             state: PerceptionState with continuous parameters
 
         Returns:
-            (x, y, z, pitch) — x/y/z in arm mm, pitch in degrees
+            (x, y, z, pitch, yaw) — x/y/z in arm mm, pitch/yaw in degrees
         """
         method = getattr(self, f'_motion_{self._mode.lower()}', self._motion_calm)
-        x, y, z, pitch = method(t, state)
+        result = method(t, state)
+        if len(result) == 4:
+            x, y, z, pitch = result
+            yaw = 0
+        else:
+            x, y, z, pitch, yaw = result
 
-        # Safety clamp position (pitch not clamped here — arm_controller handles RPY)
+        # Safety clamp position (pitch/yaw not clamped here — arm_controller handles RPY)
         cfg = self.cfg
         x = _clamp(x, cfg.bounds_x[0], cfg.bounds_x[1])
         y = _clamp(y, cfg.bounds_y[0], cfg.bounds_y[1])
@@ -86,8 +92,9 @@ class ParametricMotionGenerator:
         self._debug["mode"] = self._mode
         self._debug["target_xyz"] = [round(x, 1), round(y, 1), round(z, 1)]
         self._debug["pitch"] = round(pitch, 1)
+        self._debug["yaw"] = round(yaw, 1)
 
-        return x, y, z, pitch
+        return x, y, z, pitch, yaw
 
     def get_debug_state(self):
         """Return last-computed motion debug state."""
@@ -113,9 +120,25 @@ class ParametricMotionGenerator:
         arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
         self._hand_target = (arm_x, arm_y, arm_z)
 
+    def set_hand_rpy_input(self, hand_x, hand_y):
+        """Set RPY control from second hand (normalised 0-1 coords).
+
+        Maps hand position in camera frame to orientation offsets:
+          hand_x (horizontal, 0-1) -> yaw:  center(0.5) = 0°, range ±30°
+          hand_y (vertical, 0=top)  -> pitch: center(0.5) = 0°, range ±25°
+
+        Pass None to clear (reverts to single-hand boundary lean).
+        """
+        if hand_x is None:
+            self._hand_rpy_target = None
+            return
+        yaw = (hand_x - 0.5) * 2.0 * 30.0        # ±30°
+        pitch = -(hand_y - 0.5) * 2.0 * 25.0      # ±25°, inverted (top=positive)
+        self._hand_rpy_target = (pitch, yaw)
+
     # ------------------------------------------------------------------
     # Mode-specific motion generators
-    # Each returns (x, y, z, pitch)
+    # Each returns (x, y, z, pitch) — TRACK mode returns (x, y, z, pitch, yaw)
     # ------------------------------------------------------------------
 
     def _motion_calm(self, t, state):
@@ -282,8 +305,9 @@ class ParametricMotionGenerator:
     def _motion_track(self, t, state):
         """Direct hand tracking — follow hand position in real time.
 
-        If no hand detected, falls back to calm breathing at center.
-        Includes RPY lean at boundaries and soft margin deceleration.
+        Single-hand mode: position tracking + boundary RPY lean (original).
+        Two-hand mode:  right hand = position, left hand = RPY orientation.
+        Falls back to calm breathing if no hand detected.
         """
         if self._hand_target is None:
             return self._motion_calm(t, state)
@@ -295,39 +319,43 @@ class ParametricMotionGenerator:
         x += 3 * math.sin(2 * math.pi * 0.3 * t)
         z += 5 * math.sin(2 * math.pi * 0.2 * t)
 
-        # ── RPY lean: tilt toward target when near boundary ──
-        # Creates body language: "reaching but can't quite get there"
-        pitch = 0
-        margin = 40  # mm from boundary where lean starts
+        if self._hand_rpy_target is not None:
+            # ── Two-hand mode: second hand directly controls pitch & yaw ──
+            pitch, yaw = self._hand_rpy_target
+            self._debug["pattern"] = "hand_track_2h"
+            self._debug["rpy_input"] = [round(pitch, 1), round(yaw, 1)]
+        else:
+            # ── Single-hand mode: RPY lean at boundaries (original) ──
+            pitch = 0
+            yaw = 0
+            margin = 40  # mm from boundary where lean starts
 
-        # Lean pitch down when near high Z boundary (reaching up)
-        z_headroom_hi = cfg.bounds_z[1] - z
-        z_headroom_lo = z - cfg.bounds_z[0]
-        if z_headroom_hi < margin:
-            lean = (1.0 - z_headroom_hi / margin)  # 0..1
-            pitch += lean * 20  # tilt up to +20 degrees
-        elif z_headroom_lo < margin:
-            lean = (1.0 - z_headroom_lo / margin)
-            pitch -= lean * 15  # tilt down
+            z_headroom_hi = cfg.bounds_z[1] - z
+            z_headroom_lo = z - cfg.bounds_z[0]
+            if z_headroom_hi < margin:
+                lean = (1.0 - z_headroom_hi / margin)
+                pitch += lean * 20
+            elif z_headroom_lo < margin:
+                lean = (1.0 - z_headroom_lo / margin)
+                pitch -= lean * 15
 
-        # Y-axis proximity could add roll, but roll is fixed at 180
-        # so we add a small pitch modulation for side-reaching too
-        y_headroom_pos = cfg.bounds_y[1] - y
-        y_headroom_neg = y - cfg.bounds_y[0]
-        if y_headroom_pos < margin:
-            lean = (1.0 - y_headroom_pos / margin)
-            pitch += lean * 10
-        elif y_headroom_neg < margin:
-            lean = (1.0 - y_headroom_neg / margin)
-            pitch -= lean * 10
+            y_headroom_pos = cfg.bounds_y[1] - y
+            y_headroom_neg = y - cfg.bounds_y[0]
+            if y_headroom_pos < margin:
+                lean = (1.0 - y_headroom_pos / margin)
+                pitch += lean * 10
+            elif y_headroom_neg < margin:
+                lean = (1.0 - y_headroom_neg / margin)
+                pitch -= lean * 10
 
-        self._debug["pattern"] = "hand_track"
+            self._debug["pattern"] = "hand_track"
+            self._debug["lean_pitch"] = round(pitch, 1)
+
         self._debug["hand_target"] = [round(self._hand_target[0], 1),
                                        round(self._hand_target[1], 1),
                                        round(self._hand_target[2], 1)]
-        self._debug["lean_pitch"] = round(pitch, 1)
 
-        return x, y, z, pitch
+        return x, y, z, pitch, yaw
 
     def get_speed(self, state):
         """Compute arm speed (mm/s). Uses transition boost after mode switch.

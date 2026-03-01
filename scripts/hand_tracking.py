@@ -56,10 +56,17 @@ class HandTrackingThread:
     """Background thread: webcam -> MediaPipe hand detection -> callback.
 
     The callback signature is:
-        on_result(hand_x, hand_y, hand_z, confidence)
-    where hand_x/y are normalised 0-1 (None if no hand detected),
-    hand_z is relative depth from MediaPipe (or 0), and confidence
-    is detection confidence (0 if no hand).
+        on_result(hands)
+    where hands is a list of dicts, each with keys:
+        "label": "Left" or "Right" (MediaPipe handedness in mirrored view)
+        "x", "y", "z": normalised wrist coordinates (0-1)
+        "confidence": detection confidence
+    Empty list if no hands detected.
+
+    NOTE on handedness in mirrored video:
+        Video is flipped horizontally (mirror mode). MediaPipe classifies
+        based on the flipped image, so labels are swapped from the user's
+        perspective: MediaPipe "Left" = user's RIGHT hand, and vice versa.
     """
 
     def __init__(self, frame_buffer=None, device=0, resolution=(640, 480),
@@ -119,7 +126,7 @@ class HandTrackingThread:
         options = HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=MODEL_PATH),
             running_mode=RunningMode.VIDEO,
-            num_hands=1,
+            num_hands=2,
             min_hand_detection_confidence=0.7,
             min_hand_presence_confidence=0.5,
             min_tracking_confidence=0.5,
@@ -146,31 +153,54 @@ class HandTrackingThread:
 
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
+            hands = []
             if result.hand_landmarks:
-                landmarks = result.hand_landmarks[0]
                 h, w = frame.shape[:2]
 
-                # Draw skeleton connections
-                for i, j in HAND_CONNECTIONS:
-                    x1, y1 = int(landmarks[i].x * w), int(landmarks[i].y * h)
-                    x2, y2 = int(landmarks[j].x * w), int(landmarks[j].y * h)
-                    cv2.line(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                for idx, landmarks in enumerate(result.hand_landmarks):
+                    # Get handedness label
+                    label = "Unknown"
+                    conf = 0.5
+                    if result.handedness and idx < len(result.handedness):
+                        label = result.handedness[idx][0].category_name
+                        conf = result.handedness[idx][0].score
 
-                # Draw landmark dots
-                for lm in landmarks:
-                    cx, cy = int(lm.x * w), int(lm.y * h)
-                    cv2.circle(frame, (cx, cy), 3, (0, 200, 0), -1)
+                    # Color by role: "Left" in mirrored view = user's right = position hand
+                    is_pos = (label == "Left")
+                    skel_color = (255, 150, 50) if is_pos else (50, 200, 255)  # orange / cyan
+                    wrist_color = (0, 0, 255) if is_pos else (0, 200, 255)
 
-                # Highlight wrist with larger circle
-                wrist = landmarks[WRIST]
-                wx, wy = int(wrist.x * w), int(wrist.y * h)
-                cv2.circle(frame, (wx, wy), 8, (0, 0, 255), 2)
+                    # Draw skeleton
+                    for i, j in HAND_CONNECTIONS:
+                        x1, y1 = int(landmarks[i].x * w), int(landmarks[i].y * h)
+                        x2, y2 = int(landmarks[j].x * w), int(landmarks[j].y * h)
+                        cv2.line(frame, (x1, y1), (x2, y2), skel_color, 2)
 
-                if self.on_result:
-                    self.on_result(wrist.x, wrist.y, wrist.z, 1.0)
-            else:
-                if self.on_result:
-                    self.on_result(None, None, None, 0.0)
+                    # Draw landmark dots
+                    for lm in landmarks:
+                        cx, cy = int(lm.x * w), int(lm.y * h)
+                        cv2.circle(frame, (cx, cy), 3, skel_color, -1)
+
+                    # Highlight wrist
+                    wrist = landmarks[WRIST]
+                    wx, wy = int(wrist.x * w), int(wrist.y * h)
+                    cv2.circle(frame, (wx, wy), 8, wrist_color, 2)
+
+                    # Label: POS (position) or RPY (orientation)
+                    tag = "POS" if is_pos else "RPY"
+                    cv2.putText(frame, tag, (wx + 12, wy - 12),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, wrist_color, 2)
+
+                    hands.append({
+                        "label": label,
+                        "x": wrist.x,
+                        "y": wrist.y,
+                        "z": wrist.z,
+                        "confidence": conf,
+                    })
+
+            if self.on_result:
+                self.on_result(hands)
 
             # Push JPEG (with overlay) to frame_buffer for Dashboard
             if self.frame_buffer is not None:
