@@ -293,7 +293,7 @@ def main():
                     print("[Dashboard] Switched to hand tracking", flush=True)
 
                 def _switch_to_vlm():
-                    nonlocal hand_tracker, cam
+                    nonlocal perception, hand_tracker, cam
                     # Stop hand tracker (join thread, then release camera)
                     if hand_tracker:
                         hand_tracker.stop()
@@ -312,6 +312,20 @@ def main():
                     cam.start()
                     if perception:
                         perception.running = True
+                    else:
+                        # First switch to VLM — create perception thread
+                        provider = GeminiProvider(model=config.vlm_model)
+                        perception = PerceptionThread(
+                            provider=provider,
+                            system_prompt=config.full_system_prompt,
+                            frame_buffer=frame_buffer,
+                            state_holder=state_holder,
+                            rate_hz=config.vlm_rate_hz,
+                            frame_count=config.frame_count,
+                            on_result=on_vlm_result,
+                        )
+                        perception.start()
+                        print(f"[Dashboard] VLM perception started ({config.vlm_model} @ {config.vlm_rate_hz} Hz)", flush=True)
                     motion_gen.set_mode("CALM")
                     dashboard.set_status("running")
                     dashboard.push_input_mode("vlm")
@@ -345,6 +359,68 @@ def main():
 
         if dashboard:
             dashboard.push_input_mode(initial_input_mode)
+
+        # VLM result callback: triggers -> mode engine -> dashboard.
+        # Defined here so it's available for both initial VLM startup
+        # and runtime mode-switching from the dashboard.
+        def on_vlm_result(raw_state, latency, call_count):
+            # Check triggers on raw (unsmoothed) state
+            newly_fired = trigger_engine.check(raw_state)
+
+            # Update mode from active triggers -> apply to motion generator
+            old_mode, new_mode = mode_engine.update(
+                trigger_engine.active_triggers
+            )
+            motion_gen.set_mode(new_mode)
+
+            # Log mode transitions
+            if old_mode != new_mode:
+                trigger_reason = ", ".join(sorted(trigger_engine.active_triggers)) or "(none)"
+                print(f"[MODE] {old_mode} -> {new_mode}  triggers: {trigger_reason}",
+                      flush=True)
+                if dashboard:
+                    dashboard.push_mode_transition(
+                        old_mode, new_mode, trigger_reason, 1.0
+                    )
+
+            smoothed = state_holder.get()
+
+            if dashboard:
+                # Push state + motion debug
+                t_now = time.time()
+                x, y, z, _pitch, _yaw = motion_gen.get_target(t_now, smoothed)
+                speed = motion_gen.get_speed(smoothed)
+                dashboard.push_state(
+                    raw_state, smoothed,
+                    motion_xyz=(x, y, z), speed=speed,
+                    vlm_count=call_count, vlm_latency=latency,
+                    motion_debug=motion_gen.get_debug_state(),
+                )
+                dashboard.push_triggers(trigger_engine.active_triggers)
+
+                # Push VLM scene text
+                dashboard.push_vlm_text(
+                    perception.last_scene_description,
+                    perception.last_primary_action,
+                )
+
+                # Push arm telemetry
+                telemetry = ctrl.get_telemetry()
+                if telemetry:
+                    dashboard.push_arm_telemetry(telemetry)
+
+                # Push trigger events
+                for name in newly_fired:
+                    dashboard.push_event(
+                        "FIRED", name,
+                        trigger_engine._state_summary(raw_state),
+                    )
+                # Check for cleared triggers in recent history
+                for ts, evt, name, details in trigger_engine.trigger_history[-10:]:
+                    if evt == "CLEARED" and ts > t_now - 1.0:
+                        dashboard.push_event("CLEARED", name, details)
+                    elif evt == "BIG_DELTA" and ts > t_now - 1.0:
+                        dashboard.push_event("BIG_DELTA", details)
 
         if args.keyboard:
             # Keyboard mode: no camera, no VLM
@@ -395,66 +471,6 @@ def main():
                 cam.start()
                 if dashboard:
                     dashboard.push_event("SYSTEM", "Camera opened")
-
-            # VLM result callback -> triggers -> mode -> dashboard
-            def on_vlm_result(raw_state, latency, call_count):
-                # Check triggers on raw (unsmoothed) state
-                newly_fired = trigger_engine.check(raw_state)
-
-                # Update mode from active triggers -> apply to motion generator
-                old_mode, new_mode = mode_engine.update(
-                    trigger_engine.active_triggers
-                )
-                motion_gen.set_mode(new_mode)
-
-                # Log mode transitions
-                if old_mode != new_mode:
-                    trigger_reason = ", ".join(sorted(trigger_engine.active_triggers)) or "(none)"
-                    print(f"[MODE] {old_mode} -> {new_mode}  triggers: {trigger_reason}",
-                          flush=True)
-                    if dashboard:
-                        dashboard.push_mode_transition(
-                            old_mode, new_mode, trigger_reason, 1.0
-                        )
-
-                smoothed = state_holder.get()
-
-                if dashboard:
-                    # Push state + motion debug
-                    t_now = time.time()
-                    x, y, z, _pitch, _yaw = motion_gen.get_target(t_now, smoothed)
-                    speed = motion_gen.get_speed(smoothed)
-                    dashboard.push_state(
-                        raw_state, smoothed,
-                        motion_xyz=(x, y, z), speed=speed,
-                        vlm_count=call_count, vlm_latency=latency,
-                        motion_debug=motion_gen.get_debug_state(),
-                    )
-                    dashboard.push_triggers(trigger_engine.active_triggers)
-
-                    # Push VLM scene text
-                    dashboard.push_vlm_text(
-                        perception.last_scene_description,
-                        perception.last_primary_action,
-                    )
-
-                    # Push arm telemetry
-                    telemetry = ctrl.get_telemetry()
-                    if telemetry:
-                        dashboard.push_arm_telemetry(telemetry)
-
-                    # Push trigger events
-                    for name in newly_fired:
-                        dashboard.push_event(
-                            "FIRED", name,
-                            trigger_engine._state_summary(raw_state),
-                        )
-                    # Check for cleared triggers in recent history
-                    for ts, evt, name, details in trigger_engine.trigger_history[-10:]:
-                        if evt == "CLEARED" and ts > t_now - 1.0:
-                            dashboard.push_event("CLEARED", name, details)
-                        elif evt == "BIG_DELTA" and ts > t_now - 1.0:
-                            dashboard.push_event("BIG_DELTA", details)
 
             perception = PerceptionThread(
                 provider=provider,
