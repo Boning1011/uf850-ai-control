@@ -204,18 +204,19 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* VLM Scene */
-  .scene-section {
-    border-top: 1px solid var(--border);
-    padding: 6px 12px;
-    min-height: 80px;
-  }
-
-  .scene-content {
+  /* VLM Scene overlay (inside camera panel) */
+  .vlm-overlay-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(13, 17, 23, 0.82);
+    backdrop-filter: blur(4px);
+    padding: 8px 14px;
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-top: 4px;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid rgba(48, 54, 61, 0.7);
   }
 
   .action-badge {
@@ -233,13 +234,13 @@
   .action-badge.leaving { background: #f8514926; color: var(--red); }
   .action-badge.pointing { background: #bc8cff26; color: var(--purple); }
 
-  .scene-text {
+  .scene-text-overlay {
     font-size: 13px;
     color: var(--text);
     font-family: inherit;
-    line-height: 1.5;
+    line-height: 1.4;
     word-break: break-word;
-    white-space: pre-wrap;
+    opacity: 0.9;
   }
 
   /* Motion info */
@@ -503,6 +504,11 @@
            onerror="this.style.display='none'; document.getElementById('cameraOffline').style.display='block'"
            onload="this.style.display='block'; document.getElementById('cameraOffline').style.display='none'">
       <div class="camera-offline" id="cameraOffline" style="display:none">Camera offline</div>
+      <!-- VLM scene description overlay (VLM mode only) -->
+      <div class="vlm-overlay-bar vlm-only" id="vlmOverlayBar">
+        <span class="action-badge" id="actionBadge">idle</span>
+        <span class="scene-text-overlay" id="sceneText">Waiting for AI description...</span>
+      </div>
     </div>
 
     <!-- Right sidebar -->
@@ -564,15 +570,6 @@
             <div class="param-bar" style="width:0%;background:var(--red)"></div>
           </div>
           <span class="param-value">0.00</span>
-        </div>
-      </div>
-
-      <!-- VLM Scene (VLM mode only) -->
-      <div class="scene-section vlm-only">
-        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">VLM Scene</div>
-        <div class="scene-content">
-          <span class="action-badge" id="actionBadge">idle</span>
-          <span class="scene-text" id="sceneText">--</span>
         </div>
       </div>
 
