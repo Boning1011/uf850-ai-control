@@ -184,6 +184,11 @@ class CameraThread:
                 time.sleep(0.1)
                 continue
 
+            # Mirror horizontally — matches hand tracking view for consistent
+            # dashboard display. VLM sees the mirrored frame too, which means
+            # attention_x tracks "screen direction" not "reality direction".
+            frame = cv2.flip(frame, 1)
+
             _, jpeg = cv2.imencode('.jpg', frame,
                                    [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             self.frame_buffer.push(jpeg.tobytes())

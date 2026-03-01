@@ -221,6 +221,19 @@ class ArmController:
         print("[ARM] Servo mode enabled")
         return True
 
+    def try_reenable_servo(self):
+        """Try to restore servo mode if lost. Returns True if servo confirmed."""
+        if self._servo_mode and self.arm.mode == 1:
+            return True
+        if self.arm.has_error or self.arm.state >= 4:
+            return False  # let error recovery handle it
+        if self.recovering.locked():
+            return False  # recovery in progress
+        print("[ARM] Re-enabling servo mode...", flush=True)
+        self.move_to_center(speed=60)
+        time.sleep(0.3)
+        return self.enable_servo()
+
     def _seed_servo_pos(self):
         """Read current arm position as servo starting point."""
         code, pos = self.arm.get_position()
@@ -244,8 +257,15 @@ class ArmController:
             pitch: tool pitch in degrees (default: from self.rpy[1])
             dt: control loop timestep in seconds
         Returns:
-            SDK return code
+            SDK return code, -2 if arm not in servo mode
         """
+        # Guard: skip if arm not in servo mode (prevents SDK warning spam)
+        if self.arm.mode != 1:
+            if self._servo_mode:
+                self._servo_mode = False
+                print(f"[ARM] Servo mode lost (arm.mode={self.arm.mode})", flush=True)
+            return -2
+
         x, y, z = self.clamp_position(x, y, z)
         r, p, w = self.rpy
         if pitch is not None:

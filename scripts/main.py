@@ -164,6 +164,8 @@ def main():
             port=args.port,
         )
 
+        _mode_switch_lock = threading.Lock()
+
         def on_command(cmd, msg=None):
             nonlocal perception, hand_tracker, cam
             if msg is None:
@@ -184,6 +186,9 @@ def main():
                 # freeze the async event loop (MJPEG stream + WebSocket).
                 def _do_switch():
                     nonlocal hand_tracker, cam
+                    if not _mode_switch_lock.acquire(blocking=False):
+                        print("[Dashboard] Mode switch already in progress, ignoring.", flush=True)
+                        return
                     try:
                         if target_mode == "hand_tracking":
                             _switch_to_hand_tracking()
@@ -192,6 +197,8 @@ def main():
                     except Exception as e:
                         dashboard.push_event("ERROR", f"Mode switch failed: {e}")
                         print(f"[Dashboard] ERROR: Mode switch failed: {e}", flush=True)
+                    finally:
+                        _mode_switch_lock.release()
 
                 def _switch_to_hand_tracking():
                     nonlocal hand_tracker, cam
@@ -202,6 +209,7 @@ def main():
                     if cam:
                         cam.stop()
                         cam = None
+                        time.sleep(0.3)  # let OS fully release camera device
                     # Stop previous hand tracker if any
                     if hand_tracker:
                         hand_tracker.stop()
@@ -248,6 +256,7 @@ def main():
                         hand_tracker.stop()
                         hand_tracker = None
                         motion_gen.set_hand_target(None, None, None)
+                        time.sleep(0.3)  # let OS fully release camera device
                     # Restart VLM camera
                     cam = CameraThread(
                         device=config.camera_device,
@@ -440,10 +449,24 @@ def main():
         t = 0.0
         last_log = 0.0
 
+        servo_lost_logged = False
         while ctrl.running:
             if ctrl.arm.has_error or ctrl.arm.state >= 4:
                 time.sleep(0.1)
+                servo_lost_logged = False
                 continue
+
+            # Auto-recover if servo mode was lost
+            if ctrl.arm.mode != 1:
+                if not servo_lost_logged:
+                    print("[MAIN] Servo mode lost, attempting recovery...", flush=True)
+                    servo_lost_logged = True
+                if ctrl.try_reenable_servo():
+                    print("[MAIN] Servo mode restored.", flush=True)
+                    servo_lost_logged = False
+                else:
+                    time.sleep(0.5)
+                    continue
 
             # In hand tracking mode, skip trigger/mode engine (mode stays TRACK)
             if motion_gen.current_mode != "TRACK":
