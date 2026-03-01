@@ -136,6 +136,9 @@ class HandTrackingThread:
                 time.sleep(0.05)
                 continue
 
+            # Mirror horizontally so hand right = video right
+            frame = cv2.flip(frame, 1)
+
             # MediaPipe detection (before drawing overlay)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)

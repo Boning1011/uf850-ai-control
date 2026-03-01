@@ -105,7 +105,9 @@ class ParametricMotionGenerator:
             self._hand_target = None
             return
         cfg = self.cfg
-        arm_y = _lerp(cfg.bounds_y[1], cfg.bounds_y[0], hand_x)
+        # Amplify horizontal movement: center 50% of frame covers full Y range
+        hand_x_scaled = _clamp(0.5 + (hand_x - 0.5) * 2.0, 0.0, 1.0)
+        arm_y = _lerp(cfg.bounds_y[1], cfg.bounds_y[0], hand_x_scaled)
         arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
         arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
         self._hand_target = (arm_x, arm_y, arm_z)
