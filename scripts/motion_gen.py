@@ -123,18 +123,18 @@ class ParametricMotionGenerator:
     def set_hand_rpy_input(self, hand_x, hand_y):
         """Set RPY control from second hand (normalised 0-1 coords).
 
-        Maps hand position in camera frame to orientation offsets:
-          hand_x (horizontal, 0-1) -> yaw:  center(0.5) = 0°, range ±30°
-          hand_y (vertical, 0=top)  -> pitch: center(0.5) = 0°, range ±25°
+        Only vertical position (hand_y) is used — left hand controls pitch only.
+        This avoids left/right hand crossing in front of camera.
+
+          hand_y (vertical, 0=top) -> pitch: center(0.5) = 0°, range ±50°
 
         Pass None to clear (reverts to single-hand boundary lean).
         """
         if hand_x is None:
             self._hand_rpy_target = None
             return
-        yaw = (hand_x - 0.5) * 2.0 * 30.0        # ±30°
-        pitch = -(hand_y - 0.5) * 2.0 * 25.0      # ±25°, inverted (top=positive)
-        self._hand_rpy_target = (pitch, yaw)
+        pitch = -(hand_y - 0.5) * 2.0 * 50.0      # ±50°, inverted (top=positive)
+        self._hand_rpy_target = (pitch, 0)
 
     # ------------------------------------------------------------------
     # Mode-specific motion generators
