@@ -179,6 +179,7 @@ def main():
     motion_gen = ParametricMotionGenerator(config)
     trigger_engine = TriggerEngine()
     mode_engine = ModeEngine()
+    _vlm_warmup = [0]  # skip trigger/mode eval for first N VLM calls after mode switch
 
     # Init arm
     ctrl = ArmController(
@@ -300,6 +301,14 @@ def main():
                         hand_tracker = None
                         motion_gen.set_hand_target(None, None, None)
                         time.sleep(0.3)  # let OS fully release camera device
+                    # Reset VLM state for clean start: clear stale triggers from
+                    # the previous session and reset the state holder to defaults.
+                    # Without this, stale HIGH_ENERGY triggers from the previous
+                    # VLM session would immediately push the arm into EXCITED mode.
+                    state_holder.reset()
+                    trigger_engine.active_triggers.clear()
+                    trigger_engine.prev_state = None
+                    _vlm_warmup[0] = 2  # skip trigger eval for first 2 VLM results
                     # Restart VLM camera
                     cam = CameraThread(
                         device=config.camera_device,
@@ -364,6 +373,32 @@ def main():
         # Defined here so it's available for both initial VLM startup
         # and runtime mode-switching from the dashboard.
         def on_vlm_result(raw_state, latency, call_count):
+            # Warm-up guard: skip trigger/mode evaluation for first N calls after
+            # a mode switch. Prevents false EXCITED from the initial VLM readings
+            # while the camera warms up and state transitions from defaults to real data.
+            if _vlm_warmup[0] > 0:
+                _vlm_warmup[0] -= 1
+                smoothed = state_holder.get()
+                if dashboard:
+                    t_now = time.time()
+                    x, y, z, _pitch, _yaw = motion_gen.get_target(t_now, smoothed)
+                    speed = motion_gen.get_speed(smoothed)
+                    dashboard.push_state(
+                        raw_state, smoothed,
+                        motion_xyz=(x, y, z), speed=speed,
+                        vlm_count=call_count, vlm_latency=latency,
+                        motion_debug=motion_gen.get_debug_state(),
+                    )
+                    dashboard.push_triggers(set())
+                    dashboard.push_vlm_text(
+                        perception.last_scene_description,
+                        perception.last_primary_action,
+                    )
+                    telemetry = ctrl.get_telemetry()
+                    if telemetry:
+                        dashboard.push_arm_telemetry(telemetry)
+                return  # skip trigger/mode update during warm-up
+
             # Check triggers on raw (unsmoothed) state
             newly_fired = trigger_engine.check(raw_state)
 
@@ -481,6 +516,7 @@ def main():
                 frame_count=config.frame_count,
                 on_result=on_vlm_result,
             )
+            _vlm_warmup[0] = 2  # skip trigger eval for first 2 VLM results
             perception.start()
             print(f"VLM perception active ({config.vlm_rate_hz} Hz).\n")
             if dashboard:

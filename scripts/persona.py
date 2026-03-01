@@ -54,6 +54,11 @@ class StateHolder:
         with self._lock:
             return dataclasses.replace(self._state)
 
+    def reset(self):
+        """Reset to default state (all zeros, mood=0.5). Called on mode switches."""
+        with self._lock:
+            self._state = PerceptionState()
+
 
 class PersonaConfig:
     """Loads and holds persona configuration from YAML."""
