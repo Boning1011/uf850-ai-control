@@ -96,8 +96,8 @@ class ParametricMotionGenerator:
     def set_hand_target(self, hand_x, hand_y, hand_z):
         """Set hand tracking target from normalised coords (0-1).
 
-        Maps camera pixel space to arm Cartesian workspace:
-          hand_x (horizontal) -> arm Y (mirrored: camera left = arm right)
+        Maps camera pixel space (mirrored video) to arm Cartesian workspace:
+          hand_x (horizontal, mirrored) -> arm Y (direct: user right = viewer right = +Y)
           hand_y (vertical, 0=top) -> arm Z (inverted: top = high Z)
           arm X: fixed at comfortable forward reach
         """
@@ -107,7 +107,8 @@ class ParametricMotionGenerator:
         cfg = self.cfg
         # Amplify horizontal movement: center 50% of frame covers full Y range
         hand_x_scaled = _clamp(0.5 + (hand_x - 0.5) * 2.0, 0.0, 1.0)
-        arm_y = _lerp(cfg.bounds_y[1], cfg.bounds_y[0], hand_x_scaled)
+        # Video is mirrored, so hand_x=1 (user's right) -> +Y (viewer's right)
+        arm_y = _lerp(cfg.bounds_y[0], cfg.bounds_y[1], hand_x_scaled)
         arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
         arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
         self._hand_target = (arm_x, arm_y, arm_z)
