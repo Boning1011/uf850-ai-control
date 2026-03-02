@@ -692,6 +692,9 @@ function connect() {
     document.getElementById('wsIndicator').classList.add('connected');
     document.getElementById('footerInfo').textContent = 'Connected';
     if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+    // Re-trigger MJPEG stream after backend restart
+    const cam = document.getElementById('cameraFeed');
+    cam.src = '/video_feed?' + Date.now();
   };
 
   ws.onclose = () => {
