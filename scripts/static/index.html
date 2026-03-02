@@ -372,40 +372,29 @@
     padding: 6px 12px;
   }
 
-  .mode-current {
+  .mode-strip {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 5px;
     margin-top: 4px;
   }
 
-  .mode-badge {
-    padding: 3px 14px;
-    border-radius: 12px;
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    background: #23863626;
-    color: var(--green);
-  }
-  .mode-badge.CALM { background: #30363d; color: var(--text-dim); }
-  .mode-badge.ALERT { background: #388bfd26; color: var(--accent); }
-  .mode-badge.EXCITED { background: #f8514926; color: var(--red); }
-  .mode-badge.PLAYFUL { background: #bc8cff26; color: var(--purple); }
-  .mode-badge.TENSE { background: #d2992226; color: var(--orange); }
-  .mode-badge.DORMANT { background: #21262d; color: #484f58; }
-  .mode-badge.TRACK { background: #3fb95026; color: var(--green); }
-  .mode-badge.IDLE { background: #30363d; color: var(--text-dim); }
-
-  .mode-transition-arrow {
+  .mode-chip {
+    padding: 2px 10px;
+    border-radius: 10px;
     font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: transparent;
     color: var(--text-dim);
+    border: 1px solid var(--border);
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
   }
 
   .mode-transition-detail {
     font-size: 11px;
     color: var(--text-dim);
-    margin-top: 2px;
+    margin-top: 4px;
   }
 
   .mode-history {
@@ -640,9 +629,8 @@
       <!-- Current Mode -->
       <div class="mode-section">
         <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Current Mode</div>
-        <div class="mode-current">
-          <span class="mode-badge CALM" id="modeBadge">CALM</span>
-          <span class="mode-transition-arrow" id="modeTransitionArrow"></span>
+        <div class="mode-strip" id="modeStrip">
+          <!-- populated dynamically from available_modes -->
         </div>
         <div class="mode-transition-detail" id="modeTransitionDetail">No transitions yet</div>
         <div class="mode-history" id="modeHistory"></div>
@@ -681,6 +669,20 @@ const PARAM_COLORS = {
 const BIPOLAR_PARAMS = new Set(['attention_x', 'attention_y']);
 const ARM_STATES = ['Ready', 'Moving', 'Sleep', 'Suspended', 'Stopping'];
 const ACTION_COLORS = { waving: 'waving', approaching: 'approaching', leaving: 'leaving', pointing: 'pointing' };
+
+// Mode colors: {bg, color} per mode name. Unknown modes get a neutral default.
+const MODE_COLORS = {
+  CALM:    { bg: '#30363d',   color: '#8b949e' },
+  ALERT:   { bg: '#388bfd26', color: '#58a6ff' },
+  EXCITED: { bg: '#f8514926', color: '#f85149' },
+  PLAYFUL: { bg: '#bc8cff26', color: '#bc8cff' },
+  TENSE:   { bg: '#d2992226', color: '#d29922' },
+  DORMANT: { bg: '#21262d',   color: '#484f58' },
+  TRACK:   { bg: '#3fb95026', color: '#3fb950' },
+  IDLE:    { bg: '#30363d',   color: '#8b949e' },
+};
+const MODE_DEFAULT_COLOR = { bg: '#30363d', color: '#8b949e' };
+let _renderedModes = null;  // cache to avoid re-rendering every tick
 
 // ── WebSocket ──
 function connect() {
@@ -829,6 +831,18 @@ function handleState(msg) {
   // Triggers
   updateTriggers(msg.active_triggers || []);
 
+  // Mode strip: build chips once from available_modes
+  if (msg.available_modes && msg.available_modes.length > 0) {
+    const key = msg.available_modes.join(',');
+    if (_renderedModes !== key) {
+      const strip = document.getElementById('modeStrip');
+      strip.innerHTML = msg.available_modes.map(m =>
+        `<span class="mode-chip" data-mode="${m}">${m}</span>`
+      ).join('');
+      _renderedModes = key;
+    }
+  }
+
   // Mode
   if (msg.current_mode !== undefined) {
     updateMode(msg.current_mode, msg.mode_history || []);
@@ -888,17 +902,27 @@ function updateTriggers(triggers) {
 }
 
 function updateMode(currentMode, modeHistory) {
-  const badge = document.getElementById('modeBadge');
-  badge.textContent = currentMode;
-  badge.className = 'mode-badge ' + currentMode;
+  // Highlight active chip in mode strip
+  const chips = document.querySelectorAll('#modeStrip .mode-chip');
+  chips.forEach(chip => {
+    const m = chip.dataset.mode;
+    if (m === currentMode) {
+      const c = MODE_COLORS[m] || MODE_DEFAULT_COLOR;
+      chip.style.background = c.bg;
+      chip.style.color = c.color;
+      chip.style.borderColor = c.color;
+    } else {
+      chip.style.background = '';
+      chip.style.color = '';
+      chip.style.borderColor = '';
+    }
+  });
 
+  // Transition detail
   const detail = document.getElementById('modeTransitionDetail');
-  const arrow = document.getElementById('modeTransitionArrow');
-
   if (modeHistory && modeHistory.length > 0) {
     const last = modeHistory[modeHistory.length - 1];
-    arrow.textContent = last.from_mode + ' \u2192';
-    detail.textContent = `triggers: ${last.action}`;
+    detail.textContent = `${last.from_mode} \u2192 ${last.to_mode}  \u2022  ${last.action}`;
 
     // Show last 5 transitions
     const container = document.getElementById('modeHistory');
@@ -908,7 +932,6 @@ function updateMode(currentMode, modeHistory) {
       return `<div class="mode-history-entry"><span class="mh-time">${t}</span><span class="mh-arrow">${h.from_mode} \u2192 ${h.to_mode}</span><span class="mh-action">${h.action}</span></div>`;
     }).join('');
   } else {
-    arrow.textContent = '';
     detail.textContent = 'No transitions yet';
     document.getElementById('modeHistory').innerHTML = '';
   }

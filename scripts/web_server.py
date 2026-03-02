@@ -49,6 +49,7 @@ class DashboardServer:
         self._mode_history = []  # [{time, from_mode, to_mode, action, confidence}]
         self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
         self._input_mode = "hand_tracking"  # "vlm" | "hand_tracking" | "keyboard"
+        self._available_modes = []  # sorted list of mode names, set at startup
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -126,6 +127,7 @@ class DashboardServer:
                             "mode_history": server._mode_history[-10:],
                             "hand_tracking": server._hand_tracking,
                             "input_mode": server._input_mode,
+                            "available_modes": server._available_modes,
                             "status": server._pipeline_status,
                         }
 
@@ -224,6 +226,11 @@ class DashboardServer:
         """Set the active input mode: 'vlm', 'hand_tracking', or 'keyboard'."""
         with self._lock:
             self._input_mode = mode
+
+    def set_available_modes(self, modes):
+        """Set the list of all possible motion modes (sorted). Called at startup."""
+        with self._lock:
+            self._available_modes = sorted(modes)
 
     def push_hand_tracking(self, hand_x, hand_y, confidence):
         """Push hand tracking state. Called from hand tracking callback."""

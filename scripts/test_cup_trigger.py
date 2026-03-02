@@ -262,6 +262,8 @@ def main():
     if not args.no_dashboard:
         dashboard = DashboardServer(frame_buffer, state_holder,
                                     host="0.0.0.0", port=args.port)
+        dashboard.set_available_modes(
+            ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT", "TRACK"])
         dashboard.start()
         logger.log_event("DASHBOARD_READY")
 

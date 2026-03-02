@@ -209,6 +209,7 @@ def main():
             state_holder=state_holder,
             port=args.port,
         )
+        dashboard.set_available_modes(ModeEngine.VALID_MODES)
 
         _mode_switch_lock = threading.Lock()
 
