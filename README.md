@@ -100,6 +100,21 @@ Two input modes, switchable at launch:
 - **Hand Tracking** (default): MediaPipe detects hand positions at camera framerate, arm follows directly
 - **VLM Perception** (`--vlm`): Gemini analyzes camera frames at ~1 Hz, outputs 6 continuous behavioral parameters, trigger engine maps to motion modes
 
+### Hand Tracking Pipeline Details
+
+Beyond the core screen-to-arm coordinate mapping, the hand tracking pipeline includes:
+
+- **Two-Hand Role Split** — Right hand controls XYZ position; left hand controls pitch. Single hand defaults to position control with automatic boundary lean.
+- **Center-Weighted Amplification** — The center 50% of the camera frame maps to the arm's full left-right range, making small movements in the natural interaction zone cover the entire workspace.
+- **Boundary Lean** — When the arm approaches workspace edges, it tilts toward that direction, visually mimicking a "reaching" gesture.
+- **Soft Margin Deceleration** — Speed gradually reduces to 30% near boundaries using a smoothstep curve, preventing abrupt stops.
+- **Per-Frame Velocity Clamping** — Each servo frame enforces max displacement by Euclidean distance (position) and per-axis with angle wrapping (rotation).
+- **Mode-Switch Speed Boost** — A brief speed burst on entering tracking mode so the arm quickly catches up to the hand.
+- **Organic Micro-Motion** — Tiny sinusoidal offsets on X/Z keep the arm feeling alive even when the hand is still.
+- **No-Hand Fallback** — When hands leave the frame, the arm smoothly transitions into a calm breathing motion at center.
+- **Hard Safety Clamping** — All coordinates are hard-clamped to the workspace envelope before reaching the SDK.
+- **Auto Error Recovery** — Servo errors trigger automatic recovery: clear error, re-enable, return to center, re-enter servo mode with retries.
+
 ---
 
 ## Core Modules
