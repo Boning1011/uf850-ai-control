@@ -89,6 +89,7 @@ class GeminiProvider(VLMProvider):
                 system_instruction=system_prompt,
                 response_mime_type="application/json",
                 response_schema=VLMOutput,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
