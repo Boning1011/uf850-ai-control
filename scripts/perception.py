@@ -232,6 +232,8 @@ class PerceptionThread:
         print(f"[VLM] Perception loop started ({self.rate_hz} Hz, {self.frame_count} frames/call)", flush=True)
 
         while self.running:
+            cycle_start = time.time()
+
             frames = self.frame_buffer.get_latest(self.frame_count)
             if not frames or len(frames) < self.frame_count:
                 time.sleep(0.5)
@@ -276,4 +278,8 @@ class PerceptionThread:
                 self.error_count += 1
                 print(f"[VLM] Error #{self.error_count}: {e}", flush=True)
 
-            time.sleep(interval)
+            # Sleep only the remaining time to maintain target rate
+            elapsed = time.time() - cycle_start
+            sleep_time = max(0, interval - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)

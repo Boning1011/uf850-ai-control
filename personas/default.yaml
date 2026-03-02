@@ -63,7 +63,7 @@ vlm:
 
   rate_hz: 1.0
   provider: gemini
-  model: gemini-2.5-flash
+  model: gemini-2.5-flash-lite
   frame_count: 5
 
 motion:
