@@ -2,8 +2,6 @@
 
 New-media art installation: a 6-axis robotic arm responds to audience behavior in real time.
 
-**Pipeline**: Camera → VLM Perception (Gemini) → Continuous Parameters → Parametric Motion → Arm
-
 See [doc/Design Brief.md](doc/Design%20Brief.md) for architecture details, [doc/Devlog.md](doc/Devlog.md) for development history.
 
 ---
@@ -52,12 +50,14 @@ docker start uf_software
 uv run python scripts/main.py
 ```
 
-This starts the full pipeline: camera capture → VLM perception → parametric motion → arm control, plus a web dashboard at http://localhost:7860.
+Default mode is **Hand Tracking** (MediaPipe): camera captures hand positions and the arm follows in real time.
 
 Common launch modes:
 
 ```bash
-uv run python scripts/main.py --no-camera          # mock camera (no webcam needed)
+uv run python scripts/main.py                      # hand tracking (default)
+uv run python scripts/main.py --vlm                 # VLM perception mode (Gemini)
+uv run python scripts/main.py --vlm --no-camera     # VLM with mock camera
 uv run python scripts/main.py --keyboard            # manual parameter control (no VLM)
 uv run python scripts/main.py --no-web              # disable web dashboard
 uv run python scripts/main.py --persona personas/default.yaml --ip 192.168.1.xxx
@@ -68,7 +68,8 @@ uv run python scripts/main.py --persona personas/default.yaml --ip 192.168.1.xxx
 | `--ip` | `127.0.0.1` | Arm IP (simulator or real) |
 | `--persona` | `personas/default.yaml` | Persona YAML config |
 | `--sensitivity` | `-1` | Collision sensitivity 0-5, -1=skip |
-| `--keyboard` | off | Manual parameter control instead of VLM |
+| `--vlm` | off | VLM perception mode (Gemini) instead of hand tracking |
+| `--keyboard` | off | Manual parameter control instead of camera input |
 | `--no-camera` | off | Mock camera (gray frames) |
 | `--no-web` | off | Disable web dashboard |
 | `--port` | `7860` | Web dashboard port |
@@ -87,29 +88,137 @@ uv run python scripts/main.py --persona personas/default.yaml --ip 192.168.1.xxx
                                      │ Triggers / │
                                      │ Mode Engine│
                                      └────────────┘
+
+┌─────────┐     ┌──────────────┐
+│ Camera   │────>│ MediaPipe    │──── (hand tracking mode) ────> Motion Gen ────> Arm
+│          │     │ HandLandmark │
+└─────────┘     └──────────────┘
 ```
 
-Key modules (all under `scripts/`):
+Two input modes, switchable at launch:
 
-| Module | Role |
-|--------|------|
-| `main.py` | **Entry point** — orchestrates the full pipeline |
-| `perception.py` | Camera capture + VLM perception (Gemini) |
-| `motion_gen.py` | Parametric motion generation from perception state |
-| `arm_controller.py` | xArm SDK wrapper, servo control, safety bounds |
-| `triggers.py` | Event triggers + mode engine (idle/engaged/dramatic) |
-| `persona.py` | Persona config loader (YAML → parameters) |
-| `web_server.py` | Real-time web dashboard (FastAPI + SSE) |
+- **Hand Tracking** (default): MediaPipe detects hand positions at camera framerate, arm follows directly
+- **VLM Perception** (`--vlm`): Gemini analyzes camera frames at ~1 Hz, outputs 6 continuous behavioral parameters, trigger engine maps to motion modes
+
+---
+
+## Core Modules
+
+All source code under `scripts/`. Here's what each module does:
+
+### `main.py` — Entry Point
+
+Orchestrates the full pipeline. Parses CLI args, loads persona config, initializes all modules, and runs the 25 Hz servo loop. Supports three input modes: hand tracking (default), VLM perception (`--vlm`), and keyboard (`--keyboard`).
+
+### `arm_controller.py` — Arm Control
+
+Low-level xArm SDK wrapper. Handles:
+- Connection and initialization (with single-instance file lock)
+- Servo mode (Mode 1) for 25 Hz streaming position commands
+- Velocity clamping: limits frame-to-frame displacement to enforce speed bounds
+- Safety boundary clamping: clips XYZ to safe workspace cube
+- Automatic error recovery via callback: `clean_error()` → `motion_enable()` → `set_mode()` → `set_state()`
+
+All arm operations in the project go through this module.
+
+### `perception.py` — VLM Perception
+
+Camera capture and cloud VLM integration. Components:
+- **`FrameBuffer`**: thread-safe ring buffer for JPEG frames (shared between camera and dashboard)
+- **`CameraThread`**: background capture at configurable FPS (handles Windows DirectShow quirks)
+- **`VLMProvider`**: abstract interface for VLM backends
+- **`GeminiProvider`**: Gemini 2.5 Flash implementation — sends multi-frame batches, receives structured JSON output via Pydantic schema (`VLMOutput`: energy, attention_x/y, mood, presence, urgency, gesture, scene_description)
+
+### `motion_gen.py` — Motion Generation
+
+Parametric motion pattern generator. 7 distinct modes, each with qualitatively different movement:
+
+| Mode | Behavior |
+|------|----------|
+| `CALM` | Gentle breathing at center, small sinusoidal oscillation |
+| `ALERT` | Reach far forward toward attention point |
+| `EXCITED` | Big dramatic sweeping arcs, full workspace Lissajous |
+| `PLAYFUL` | Extend forward + rapid pitch oscillation (head nod effect) |
+| `TENSE` | Reach high on Z axis, small trembling |
+| `DORMANT` | Contracted low position, barely moving |
+| `TRACK` | Real-time hand following via MediaPipe coordinates |
+
+Mode transitions are instant with a speed boost during the first 0.8s after switch. Takes perception state as input, outputs `(x, y, z, pitch, yaw, speed)` target per frame.
+
+### `triggers.py` — Trigger & Mode Engine
+
+Two components that sit between perception and motion:
+- **`TriggerEngine`**: detects behavioral state transitions — 11 numeric triggers (e.g. `HIGH_ENERGY`, `SUDDEN_MOVEMENT`, `HEAD_TURN_LEFT`) based on threshold crossings, plus 10 gesture triggers (e.g. `GESTURE_HEART`, `GESTURE_WAVE`) from VLM gesture detection
+- **`ModeEngine`**: maps active triggers to motion modes via priority-ordered rules (gesture triggers have highest priority, e.g. heart gesture → PLAYFUL, rock gesture → EXCITED)
+
+### `persona.py` — Config & State
+
+Three components:
+- **`PerceptionState`**: dataclass with 6 continuous behavioral parameters (energy, attention_x/y, mood, presence, urgency), all auto-clamped to valid ranges
+- **`StateHolder`**: thread-safe wrapper with exponential moving average smoothing (default α=0.3) for graceful transitions between VLM updates
+- **`PersonaConfig`**: loads `personas/*.yaml` — defines VLM system prompt, personality hints, motion parameters (center, amplitude, frequency, speed), safety bounds, and camera settings
+
+### `hand_tracking.py` — Hand Tracking
+
+MediaPipe HandLandmarker running in a background thread. Captures camera frames, detects hand landmarks (21 points), normalizes wrist coordinates to 0–1 range, and delivers results via callback. Also pushes JPEG frames to the shared `FrameBuffer` so the dashboard camera feed stays alive. Used as the default input mode for TRACK motion.
+
+### `web_server.py` — Dashboard
+
+FastAPI-based real-time monitoring server, runs in a background thread alongside the main pipeline:
+- `/` — HTML dashboard (served from `scripts/static/index.html`)
+- `/video_feed` — MJPEG camera stream
+- `/ws` — WebSocket pushing real-time state: VLM parameters, smoothed state, motion targets, active triggers, arm telemetry
+- REST endpoints for pipeline control (pause/resume, mode switching, input mode selection)
+
+Default: http://localhost:7860
+
+---
+
+## Persona System
+
+Behavior is configured via YAML files in `personas/`. The default persona (`personas/default.yaml`) defines:
+
+- **VLM prompt**: system prompt and personality hints that shape how Gemini interprets the scene
+- **Motion parameters**: center position, amplitude/frequency ranges, speed scaling, attention range
+- **Safety bounds**: XYZ workspace limits for boundary clamping
+- **Camera settings**: device index, resolution, JPEG quality
+
+Create new personas by copying `default.yaml` and adjusting parameters. Load with `--persona personas/my_persona.yaml`.
 
 ---
 
 ## Utility Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/test_sim_connection.py` | Verify SDK-to-simulator connection |
-| `scripts/loop_motion.py` | Continuous figure-8 + automatic error recovery |
-| `scripts/path_validator.py` | Houdini → arm coordinate validation |
+Offline tools for workspace analysis and calibration (not part of the runtime pipeline):
+
+### `scripts/path_validator.py` — Path Feasibility Testing
+
+Loads a 3D path (JSON, CSV, or Houdini `.geo` format), validates reachability via IK checks, and uses binary search on the simulator to find maximum feasible speed. Also contains the `houdini_to_arm()` coordinate mapping function.
+
+```bash
+uv run python scripts/path_validator.py path_data/example.json
+uv run python scripts/path_validator.py path_data/houdini_path.json --ik-only
+uv run python scripts/path_validator.py path_data/my_path.csv --speed-max 800
+```
+
+### `scripts/probe_workspace.py` — Workspace Envelope Probing
+
+Systematically tests IK feasibility across a grid of positions and orientations (no physical movement — pure IK computation). Outputs structured reference data to `doc/arm_workspace_data.json`.
+
+```bash
+uv run python scripts/probe_workspace.py              # standard grid
+uv run python scripts/probe_workspace.py --fine        # 25mm grid (slower)
+uv run python scripts/probe_workspace.py --presets-only
+```
+
+### `scripts/axis_calibrate.py` — Coordinate Axis Calibration
+
+Interactive tool that moves the arm to 7 reference positions (center, ±X, ±Y, ±Z) one at a time, for visual verification of coordinate directions in UFactory Studio.
+
+```bash
+uv run python scripts/axis_calibrate.py
+uv run python scripts/axis_calibrate.py --ip 192.168.1.xxx
+```
 
 ---
 
@@ -122,3 +231,15 @@ clean_error() → motion_enable(True) → set_mode(0) → set_state(0)
 ```
 
 Key error codes: 22 (self-collision), 23 (joint limit), 24 (speed limit), 31 (collision current), 35 (safety boundary).
+
+---
+
+## Reference Documents
+
+| Document | Content |
+|----------|---------|
+| [doc/Design Brief.md](doc/Design%20Brief.md) | Architecture details and development phases |
+| [doc/arm_reference.md](doc/arm_reference.md) | Arm workspace envelope, presets, RPY freedom (IK-verified) |
+| [doc/Devlog.md](doc/Devlog.md) | Development timeline and decision history |
+| [doc/Environment.md](doc/Environment.md) | Hardware, accounts, tooling details |
+| [doc/UFactory Studio Docker Setup.md](doc/UFactory%20Studio%20Docker%20Setup.md) | Docker simulator setup and commands |
