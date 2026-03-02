@@ -14,11 +14,13 @@ Problems: every new behavior requires a full CG pipeline round-trip, animations 
 
 ### Layer 1 — AI Perception & Decision
 
-A cloud VLM (e.g. Claude Vision, GPT-4V) analyzes camera frames at ~0.5–1 Hz and outputs structured scene understanding: audience count, position, distance, gesture, and a recommended behavioral state (idle, curious, tracking, excited, etc.).
+**Two parallel modes:**
 
-This replaces the state machine. The arm no longer reacts to binary sensor triggers — it "sees" and "interprets" the scene.
+**A. VLM Mode** — Google Gemini 2.5 Flash analyzes camera frames at ~1 Hz and outputs structured scene understanding via JSON schema (energy, attention_x/y, mood, presence, urgency). Multiple frames per call (~5 frames, 0.2s apart) allow detection of dynamic gestures. VLM runs asynchronously; PerceptionState is smoothed with exponential moving average (EMA factor 0.3) to avoid jitter.
 
-Optional inputs: audio via speech-to-text, local lightweight models (YOLO/MediaPipe) as a pre-filter to reduce API cost.
+**B. Hand Tracking Mode (Default)** — MediaPipe HandLandmarker runs locally in a background thread at full camera speed, with no cloud API dependency. Right hand controls arm XYZ position; left hand controls pitch orientation (pitch-only, ±50°). Camera feed is mirrored horizontally for natural interaction; MediaPipe hand labels are swapped accordingly.
+
+Both modes feed into the same PerceptionState → TriggerEngine → ModeEngine → MotionGenerator pipeline. Modes can be switched at runtime from the web dashboard.
 
 ### Layer 2 — Procedural Motion Generation
 
@@ -62,47 +64,43 @@ The Python control script sends current state, tool position, orientation, and a
 
 ## Development Phases
 
-1. **Afternoon**: Wire VLM perception to existing animation library as proof of concept
-2. **1–2 days**: Replace CSV playback with procedural Cartesian control; configure safety boundaries
-3. **1–2 weeks**: Polish motion personalities, integrate TouchDesigner via OSC, add local pre-filter
-4. **1 month (optional)**: Introduce imitation learning via LeRobot for organic gesture quality
+1. ✅ **~1 day** — Wire VLM perception (Gemini 2.5 Flash) to procedural arm control as PoC
+2. ✅ **~1 day** — Replace CSV playback with procedural Cartesian control; servo mode; error recovery; safety layers
+3. ✅ **~1 week** — Polish motion personalities (7 modes), web dashboard, MediaPipe hand tracking as default mode, two-hand control, tab UI
+4. **Ongoing** — TouchDesigner OSC integration, tune motion on real hardware, optional: imitation learning (LeRobot) for organic gestures
 
-## Future: Real-Time Tracking Mode (Planned)
+## Real-Time Tracking Mode (Implemented — Default)
 
-A parallel interaction mode where the arm directly tracks a human body part (hand, face, etc.) via local detection (MediaPipe / similar), bypassing the VLM perception layer entirely. This would coexist with the VLM-driven procedural modes — switchable at runtime (e.g. from the web dashboard).
+The arm directly tracks hand position via MediaPipe, bypassing the VLM perception layer entirely. This is now the **default mode** when launching `main.py`.
 
-**Architecture sketch:**
+**Pipeline:**
 
 ```
-Camera → Local detector (MediaPipe) → Pixel coordinates
-  → Linear mapping to Performance Zone (arm Cartesian)
-  → Clamp to safe bounds (existing)
-  → Overshoot → RPY lean for expressiveness
-  → Soft margin deceleration near boundaries
-  → EMA on clamped output (not raw target)
-  → Servo mode (existing velocity clamp pipeline)
+Camera → MediaPipe HandLandmarker (background thread)
+  → Right hand: XY pixel → arm XYZ Cartesian (mirrored, 2× horizontal scale)
+  → Left hand: wrist Y pixel → pitch angle (±50°, pitch-only)
+  → Clamp to safety bounds
+  → EMA smoothing on clamped output
+  → Servo mode (velocity-clamped set_servo_cartesian)
 ```
 
-**Key design decisions:**
-- Implemented as a new motion mode alongside CALM/ALERT/EXCITED/etc., not a replacement
-- Reuses existing servo pipeline (`send_servo` + velocity clamp)
-- Performance Zone = conservative subset of workspace, same concept as current `safety` bounds
-- RPY lean (tool tilts toward unreachable targets) adds body language when hand goes out of range
-- Soft margin near boundaries: gradual speed/noise reduction before hitting the wall
-- Smooth after clamp, not before — prevents oscillation at boundary crossings
+**Two-hand design:**
+- **Right hand** — controls arm tip position (X, Y). Horizontal movement scaled 2× for responsive feel. Camera mirrored, so "natural" left/right maps correctly.
+- **Left hand** — controls pitch only (J5 wrist tilt). Range ±50°. Decoupled from position so each hand has a single clear role.
 
-**Implementation order (incremental):**
-1. MediaPipe hand/face detection → screen overlay to verify tracking quality
-2. Linear mapping from pixel to arm XYZ → pure clamp, no lean yet
-3. Integrate as a new motion mode, switchable from dashboard
-4. Add RPY lean for expressiveness at boundaries
-5. Add soft margin deceleration
-6. Tune gains, smoothing, zone size on real hardware
+**Key implementation notes:**
+- Runs as `HandTrackingThread` alongside existing pipeline; pushes JPEG frames to shared buffer for dashboard
+- TRACK motion mode in `ParametricMotionGenerator` — reuses same servo pipeline as other modes
+- Mode switchable at runtime from web dashboard without restarting
+- Camera resources handed off cleanly when switching between VLM and hand tracking modes
 
 ## Key Dependencies
 
-- UFactory Python SDK (`xArm-Python-SDK`)
-- Anthropic or OpenAI API (for VLM perception layer)
-- `python-osc` (for TouchDesigner communication)
-- OpenCV (camera capture)
-- Standard math/noise libraries for procedural motion
+- `xarm-python-sdk` — UFactory arm control (Cartesian + servo mode)
+- `google-genai` — Gemini 2.5 Flash VLM (structured JSON output)
+- `mediapipe` — Local hand landmark detection (no cloud API)
+- `opencv-contrib-python` — Camera capture, frame processing
+- `fastapi` + `uvicorn` + `websockets` — Real-time web dashboard
+- `python-osc` — TouchDesigner OSC communication (planned)
+- `pyyaml` — Persona config files
+- `tenacity` — Retry logic for VLM API calls

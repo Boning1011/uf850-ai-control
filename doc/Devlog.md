@@ -4,6 +4,62 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-03-01 — 手部跟踪成为默认模式 + 一轮 Bug 修复
+
+**结论：** Hand tracking 模式稳定，定为 `main.py` 默认入口（无需 `--vlm` flag）。VLM 模式改为 opt-in（`--vlm`）。
+
+**Dashboard 重设计：**
+- Tab 切换 UI — Camera / VLM / Hand 三个标签，各自独立面板
+- VLM 场景描述移到摄像头面板 overlay 栏（始终可见，不占主区域）
+
+**修复的 Bug（批次）：**
+
+| Bug | 现象 | 修复 |
+|-----|------|------|
+| VLM 启动 false EXCITED | 启动时旧触发器残留 + warmup 期间就触发模式切换 | 启动时清空 trigger history + 加 warmup guard（前 N 秒不触发模式切换）|
+| VLM 模式切换失败 | 从 hand tracking 切换到 VLM 后摄像头冲突、模式不同步 | 切换时正确释放/转交摄像头资源；模式状态同步 |
+| 摄像头在模式切换后冻结 | Hand tracking 线程持有摄像头句柄，VLM 线程无法打开 | 线程退出时显式 release；加等待确认 |
+| Servo mode 警告刷屏 | `set_mode(1)` 未确认就发 servo 命令，在 Mode 0 下运行 | 加异步模式确认等待 + 重试 |
+| Hand tracking Y 方向反转 | 手往上移，臂往下走 | 反转 Y 轴映射 |
+| 水平移动响应太小 | 手移动一大段，臂只动一点点 | 水平方向 2× 缩放 |
+| 摄像头 mirror | 非镜像导致左右直觉反转 | 水平翻转帧；MediaPipe hand label 也对应 swap |
+
+---
+
+## 2026-02-28 — 双手控制：右手位置 + 左手俯仰
+
+**实现：** 两个手各有明确职责，避免干扰。
+
+- **右手** → 控制臂末端 XY 位置。水平映射到臂 X 轴（缩放 2×），垂直映射到臂 Y 轴（±400mm）。
+- **左手** → 仅控制 pitch（J5 俯仰），范围 ±50°。不影响位置，单独一个维度。
+
+**决策：左手 pitch-only 而非全 RPY**
+- 完整 RPY 三轴全靠单手控制在直觉上太难
+- Pitch（点头/仰头）是表达力最强的一个维度
+- Roll/Yaw 可后续扩展，但先验证 pitch-only 效果
+
+**坐标映射：**
+- 摄像头水平镜像，MediaPipe 的 LEFT/RIGHT label 在画面里对应用户的右/左手
+- 归一化坐标 0–1 线性映射到臂空间，上下方向反转（屏幕 Y 轴向下，臂空间向上为正）
+
+**文件：** `scripts/hand_tracking.py` — `HandTrackingThread`，后台线程，MediaPipe HandLandmarker，推帧到 shared buffer
+
+---
+
+## 2026-02-28 — MediaPipe 手部跟踪接入 + 迁移到 uv
+
+**手部跟踪：**
+- MediaPipe HandLandmarker（`.task` 模型文件，约 50MB，不入 Git）作为本地替代感知
+- 接入为新的 `TRACK` motion mode，与 CALM/ALERT/EXCITED 等并列，可从 dashboard 切换
+- 无需网络、无 API 成本、低延迟（本地推理）
+
+**uv 迁移：**
+- 从 `requirements.txt` + pip 迁移到 uv 管理（`pyproject.toml` + `uv.lock`）
+- `uv.lock` 纳入 Git，跨机器一致性保证
+- 旧 `requirements.txt` 删除
+
+---
+
 ## 2026-02-27 — 规划：实时跟踪模式（手部/人脸）
 
 **决策：** 未来要做一个独立的实时跟踪交互模式，与现有 VLM 驱动的程序化运动并行存在，可在运行时切换。
