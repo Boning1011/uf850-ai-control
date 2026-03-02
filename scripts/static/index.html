@@ -591,13 +591,11 @@
           <span class="label">Phase</span><span class="value" id="dbgPhase">--</span>
         </div>
         <div class="debug-flags">
-          <span class="flag-dot" id="flagHarmonic" title="Mood harmonic (tense)"></span>
-          <span class="flag-label">harmonic</span>
-          <span class="flag-dot" id="flagPlayful" title="Playful modulation"></span>
-          <span class="flag-label">playful</span>
-          <span class="flag-dot" id="flagJitter" title="Urgency jitter"></span>
-          <span class="flag-label">jitter</span>
-          <span class="flag-dot" id="flagModeMult" title="Mode multipliers active"></span>
+          <span class="flag-dot" id="flagBoost" title="Transition speed boost (after mode switch)"></span>
+          <span class="flag-label">boost</span>
+          <span class="flag-dot" id="flagPitch" title="Pitch oscillation active"></span>
+          <span class="flag-label">pitch</span>
+          <span class="flag-dot" id="flagModeMult" title="Current motion mode"></span>
           <span class="flag-label" id="modeMultLabel">mode 1.0x</span>
           <span class="speed-mult" id="dbgSpeedMult">1.0x</span>
         </div>
@@ -787,13 +785,11 @@ function handleState(msg) {
     document.getElementById('dbgPhase').textContent =
       d.pattern ? d.pattern : (Array.isArray(d.phase) ? d.phase.map(v => (v * 100).toFixed(0) + '%').join(' / ') : '--');
 
-    // Flags: show transition boost instead of old harmonic/playful/jitter
-    document.getElementById('flagHarmonic').style.background =
+    // Flags
+    document.getElementById('flagBoost').style.background =
       d.transition_boost ? 'var(--red)' : 'var(--border)';
-    document.getElementById('flagPlayful').style.background =
+    document.getElementById('flagPitch').style.background =
       d.pitch && Math.abs(d.pitch) > 1 ? 'var(--purple)' : 'var(--border)';
-    document.getElementById('flagJitter').style.background =
-      d.jitter_active ? 'var(--red)' : 'var(--border)';
 
     document.getElementById('dbgSpeedMult').textContent = (d.speed || '--') + ' mm/s';
 
