@@ -55,7 +55,7 @@ class VLMProvider(ABC):
 class GeminiProvider(VLMProvider):
     """Gemini 2.5 Flash via google-genai standard generateContent API."""
 
-    def __init__(self, model: str = "gemini-2.5-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash-lite"):
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY not set. Add it to .env or environment.")
@@ -89,7 +89,6 @@ class GeminiProvider(VLMProvider):
                 system_instruction=system_prompt,
                 response_mime_type="application/json",
                 response_schema=VLMOutput,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
