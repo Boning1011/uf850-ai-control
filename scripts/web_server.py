@@ -42,6 +42,7 @@ class DashboardServer:
         self._pipeline_status = "running"
         self._scene_description = ""
         self._primary_action = "idle"
+        self._gesture = "none"
         self._motion_debug = None
         self._arm_telemetry = None
         self._current_mode = "IDLE"
@@ -117,6 +118,7 @@ class DashboardServer:
                             "arm": server._arm_telemetry,
                             "scene_description": server._scene_description,
                             "primary_action": server._primary_action,
+                            "gesture": server._gesture,
                             "vlm_count": server._vlm_count,
                             "vlm_latency": server._vlm_latency,
                             "active_triggers": server._active_triggers,
@@ -206,11 +208,12 @@ class DashboardServer:
                 if "mode" in motion_debug:
                     self._current_mode = motion_debug["mode"]
 
-    def push_vlm_text(self, scene_description, primary_action):
+    def push_vlm_text(self, scene_description, primary_action, gesture="none"):
         """Push VLM scene description text. Called from perception callback."""
         with self._lock:
             self._scene_description = scene_description
             self._primary_action = primary_action
+            self._gesture = gesture
 
     def push_arm_telemetry(self, telemetry):
         """Push arm physical telemetry dict. Called from main loop."""

@@ -26,10 +26,25 @@ class TriggerEngine:
         "LOW_PRESENCE":     {"field": "presence",    "op": "<",  "val": 0.15},
     }
 
+    # Gesture string -> trigger name mapping. Any gesture not "none" fires a trigger.
+    GESTURE_TRIGGERS = {
+        "heart":      "GESTURE_HEART",
+        "thumbs_up":  "GESTURE_THUMBS_UP",
+        "rock":       "GESTURE_ROCK",
+        "peace":      "GESTURE_PEACE",
+        "wave":       "GESTURE_WAVE",
+        "pointing":   "GESTURE_POINTING",
+        "open_palm":  "GESTURE_OPEN_PALM",
+        "fist":       "GESTURE_FIST",
+        "ok":         "GESTURE_OK",
+        "other":      "GESTURE_OTHER",
+    }
+
     def __init__(self):
         self.active_triggers = set()
         self.trigger_history = []  # (timestamp, event_type, trigger_name, details)
         self.prev_state = None
+        self._active_gesture_trigger = None  # currently active gesture trigger name
 
     def check(self, state: PerceptionState) -> list[str]:
         """Check state against all triggers, return list of newly fired triggers."""
@@ -43,19 +58,25 @@ class TriggerEngine:
             elif rule["op"] == "<" and val < rule["val"]:
                 current_active.add(name)
 
-        # Detect transitions
+        # Preserve gesture triggers (managed by check_gesture, not numeric thresholds)
+        gesture_triggers = {t for t in self.active_triggers if t.startswith("GESTURE_")}
+        current_active |= gesture_triggers
+
+        # Detect transitions (only for numeric triggers)
         for name in current_active - self.active_triggers:
-            newly_fired.append(name)
-            self.trigger_history.append((
-                time.time(), "FIRED", name,
-                self._state_summary(state),
-            ))
+            if not name.startswith("GESTURE_"):
+                newly_fired.append(name)
+                self.trigger_history.append((
+                    time.time(), "FIRED", name,
+                    self._state_summary(state),
+                ))
 
         for name in self.active_triggers - current_active:
-            self.trigger_history.append((
-                time.time(), "CLEARED", name,
-                self._state_summary(state),
-            ))
+            if not name.startswith("GESTURE_"):
+                self.trigger_history.append((
+                    time.time(), "CLEARED", name,
+                    self._state_summary(state),
+                ))
 
         self.active_triggers = current_active
 
@@ -70,6 +91,33 @@ class TriggerEngine:
                 ))
 
         self.prev_state = state
+        return newly_fired
+
+    def check_gesture(self, gesture: str) -> list[str]:
+        """Check gesture string, fire/clear gesture triggers. Returns newly fired."""
+        newly_fired = []
+        trigger_name = self.GESTURE_TRIGGERS.get(gesture)
+
+        # Clear previous gesture trigger if gesture changed
+        if self._active_gesture_trigger and self._active_gesture_trigger != trigger_name:
+            old = self._active_gesture_trigger
+            self.active_triggers.discard(old)
+            self.trigger_history.append((
+                time.time(), "CLEARED", old, f"gesture={gesture}",
+            ))
+            self._active_gesture_trigger = None
+
+        # Fire new gesture trigger
+        if trigger_name and trigger_name not in self.active_triggers:
+            self.active_triggers.add(trigger_name)
+            self._active_gesture_trigger = trigger_name
+            newly_fired.append(trigger_name)
+            self.trigger_history.append((
+                time.time(), "FIRED", trigger_name, f"gesture={gesture}",
+            ))
+        elif trigger_name:
+            self._active_gesture_trigger = trigger_name
+
         return newly_fired
 
     def _state_summary(self, s):
@@ -98,7 +146,20 @@ class ModeEngine:
     VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT", "TRACK"}
 
     # Priority-ordered rules: first match wins (highest priority first)
+    # Gesture triggers are HIGHEST priority — they always override numeric triggers.
     TRIGGER_RULES = [
+        # --- Gesture triggers (top priority) ---
+        ({"GESTURE_ROCK"},       "EXCITED"),   # rock/metal → wild energy
+        ({"GESTURE_FIST"},       "EXCITED"),   # fist pump → high energy
+        ({"GESTURE_THUMBS_UP"},  "EXCITED"),   # thumbs up → excited approval
+        ({"GESTURE_HEART"},      "PLAYFUL"),   # heart → warm and playful
+        ({"GESTURE_PEACE"},      "PLAYFUL"),   # peace → playful and happy
+        ({"GESTURE_OK"},         "PLAYFUL"),   # ok → positive playful
+        ({"GESTURE_WAVE"},       "ALERT"),     # wave → full attention
+        ({"GESTURE_POINTING"},   "ALERT"),     # pointing → directional attention
+        ({"GESTURE_OPEN_PALM"},  "ALERT"),     # open palm → "look at me"
+        ({"GESTURE_OTHER"},      "ALERT"),     # unknown gesture → curious attention
+        # --- Numeric triggers ---
         ({"HIGH_ENERGY", "SUDDEN_MOVEMENT"}, "EXCITED"),
         ({"HIGH_ENERGY"},                     "EXCITED"),
         ({"SUDDEN_MOVEMENT"},                 "EXCITED"),

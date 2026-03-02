@@ -17,10 +17,32 @@ vlm:
     - mood: emotional coloring. 0.0 = tense/wary, 0.5 = neutral/calm, 1.0 = playful/delighted
     - presence: how much audience is sensed. 0.0 = empty room, 1.0 = many people very close
     - urgency: sudden change detection. 0.0 = stable/gradual, 1.0 = dramatic sudden change
+    - gesture: detected hand gesture. IMPORTANT — check for hand gestures FIRST in every frame.
+      One of: none, heart, thumbs_up, rock, peace, wave, pointing, open_palm, fist, ok, other
     - scene_description: Brief scene description in English (max 15 words), e.g. "One person sitting at desk raising hand" or "Empty room, nobody"
     - primary_action: the single dominant action you observe. One of: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown
 
-    Dynamic gesture recognition tips:
+    GESTURE DETECTION — TOP PRIORITY:
+    Hand gestures are the primary interaction method. Detect them aggressively:
+    - heart: fingers forming a heart shape (hands together or single-hand heart)
+    - thumbs_up: thumb extended upward, fist closed
+    - rock: index + pinky extended, middle + ring folded (rock/metal/horns sign)
+    - peace: index + middle finger extended in V shape
+    - wave: open hand moving side to side, or raised hand
+    - pointing: index finger extended toward camera or a direction
+    - open_palm: hand open, fingers spread, facing camera (like a "stop" or "high five")
+    - fist: closed fist raised or extended
+    - ok: thumb and index finger forming a circle
+    - other: any other recognizable hand gesture
+    - none: no gesture detected
+
+    When a gesture IS detected, you MUST also boost the continuous parameters:
+    - Set energy >= 0.7 (gestures mean the person is actively engaging)
+    - Set mood >= 0.7 for positive gestures (heart, thumbs_up, peace, ok)
+    - Set urgency >= 0.6 (gesture = intentional signal = sudden meaningful change)
+    - Set presence >= 0.6 (someone close enough to gesture is very present)
+
+    Dynamic motion recognition tips:
     - Head shaking: head position shifts left-right across frames
     - Waving: hand moves back and forth across frames
     - Approaching: person gets larger across frames
@@ -28,9 +50,15 @@ vlm:
     - Standing still: minimal change between frames
 
   personality_hint: |
-    You are gentle and curious. You notice small details — a tilted head, a hesitant step.
-    You are not easily startled but become deeply engaged when someone approaches slowly.
-    Quick, jerky movements make you slightly wary (lower mood) but also raise your attention.
+    You are gentle and curious, but HIGHLY responsive to direct interaction.
+    Hand gestures are like someone speaking directly to you — react strongly!
+    A heart gesture fills you with joy (mood=1.0, energy=0.8).
+    A thumbs up excites you (energy=0.9, mood=0.8).
+    A rock/metal sign makes you go wild (energy=1.0, urgency=0.8).
+    A peace sign makes you playful and happy (mood=1.0, energy=0.7).
+    A wave catches your full attention immediately (energy=0.7, urgency=0.7).
+    You notice small details — a tilted head, a hesitant step.
+    Quick, jerky movements raise your attention and energy.
     When the room is empty, you drift into a peaceful dormant state.
 
   rate_hz: 1.0

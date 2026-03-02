@@ -308,6 +308,7 @@ def main():
                     state_holder.reset()
                     trigger_engine.active_triggers.clear()
                     trigger_engine.prev_state = None
+                    trigger_engine._active_gesture_trigger = None
                     _vlm_warmup[0] = 2  # skip trigger eval for first 2 VLM results
                     # Restart VLM camera
                     cam = CameraThread(
@@ -393,6 +394,7 @@ def main():
                     dashboard.push_vlm_text(
                         perception.last_scene_description,
                         perception.last_primary_action,
+                        perception.last_gesture,
                     )
                     telemetry = ctrl.get_telemetry()
                     if telemetry:
@@ -401,6 +403,11 @@ def main():
 
             # Check triggers on raw (unsmoothed) state
             newly_fired = trigger_engine.check(raw_state)
+
+            # Check gesture triggers (from VLM gesture field)
+            gesture = perception.last_gesture if perception else "none"
+            gesture_fired = trigger_engine.check_gesture(gesture)
+            newly_fired.extend(gesture_fired)
 
             # Update mode from active triggers -> apply to motion generator
             old_mode, new_mode = mode_engine.update(
@@ -433,10 +440,11 @@ def main():
                 )
                 dashboard.push_triggers(trigger_engine.active_triggers)
 
-                # Push VLM scene text
+                # Push VLM scene text + gesture
                 dashboard.push_vlm_text(
                     perception.last_scene_description,
                     perception.last_primary_action,
+                    perception.last_gesture,
                 )
 
                 # Push arm telemetry

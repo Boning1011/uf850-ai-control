@@ -507,6 +507,7 @@
       <!-- VLM scene description overlay (VLM mode only) -->
       <div class="vlm-overlay-bar vlm-only" id="vlmOverlayBar">
         <span class="action-badge" id="actionBadge">idle</span>
+        <span class="action-badge" id="gestureBadge" style="display:none"></span>
         <span class="scene-text-overlay" id="sceneText">Waiting for AI description...</span>
       </div>
     </div>
@@ -753,6 +754,18 @@ function handleState(msg) {
     const action = msg.primary_action || 'idle';
     ab.textContent = action;
     ab.className = 'action-badge' + (ACTION_COLORS[action] ? ' ' + ACTION_COLORS[action] : '');
+
+    // Gesture badge
+    const gb = document.getElementById('gestureBadge');
+    const gesture = msg.gesture || 'none';
+    if (gesture !== 'none') {
+      gb.textContent = gesture;
+      gb.style.display = '';
+      gb.style.background = '#e040fb';
+      gb.style.color = '#fff';
+    } else {
+      gb.style.display = 'none';
+    }
   }
 
   // Motion target
