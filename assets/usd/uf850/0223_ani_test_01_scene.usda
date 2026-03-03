@@ -1,0 +1,7 @@
+#usda 1.0
+(
+    subLayers = [
+        @./0223_ani_test_01.usda@,
+        @./uf850.usda@
+    ]
+)
