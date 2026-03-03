@@ -10,8 +10,6 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class VLMOutput(BaseModel):
     energy: float = Field(ge=0, le=1)
-    attention_x: float = Field(ge=-1, le=1)
-    attention_y: float = Field(ge=-1, le=1)
     mood: float = Field(ge=0, le=1)
     presence: float = Field(ge=0, le=1)
     urgency: float = Field(ge=0, le=1)
@@ -19,8 +17,7 @@ class VLMOutput(BaseModel):
 SYSTEM = (
     "You are the perception system for an interactive robotic arm. "
     "Analyze camera frames. Output behavioral parameters as JSON. "
-    "energy: 0=dormant 1=excited. attention_x: -1=left 1=right. "
-    "attention_y: -1=bottom 1=top. mood: 0=tense 1=playful. "
+    "energy: 0=dormant 1=excited. mood: 0=tense 1=playful. "
     "presence: 0=empty 1=crowded. urgency: 0=stable 1=sudden_change."
 )
 
@@ -74,8 +71,8 @@ def run_test(label, model, extra_config=None):
 
             s = resp.parsed
             if s:
-                print(f"  #{i+1}: {dt:.2f}s  e={s.energy:.2f} ax={s.attention_x:+.2f} "
-                      f"ay={s.attention_y:+.2f} m={s.mood:.2f} p={s.presence:.2f} u={s.urgency:.2f}")
+                print(f"  #{i+1}: {dt:.2f}s  e={s.energy:.2f} m={s.mood:.2f} "
+                      f"p={s.presence:.2f} u={s.urgency:.2f}")
             else:
                 txt = resp.text or ""
                 if "```" in txt:
@@ -84,9 +81,8 @@ def run_test(label, model, extra_config=None):
                         txt = txt[4:]
                 try:
                     data = json.loads(txt.strip())
-                    print(f"  #{i+1}: {dt:.2f}s  e={data['energy']:.2f} ax={data['attention_x']:+.2f} "
-                          f"ay={data['attention_y']:+.2f} m={data['mood']:.2f} p={data['presence']:.2f} "
-                          f"u={data['urgency']:.2f} (fallback)")
+                    print(f"  #{i+1}: {dt:.2f}s  e={data['energy']:.2f} m={data['mood']:.2f} "
+                          f"p={data['presence']:.2f} u={data['urgency']:.2f} (fallback)")
                 except Exception:
                     print(f"  #{i+1}: {dt:.2f}s  PARSE FAIL: {txt[:80]}")
         except Exception as e:

@@ -32,15 +32,13 @@ DT = 0.04  # 25 Hz
 def keyboard_thread(state_holder, running_flag):
     """Read keyboard input to adjust PerceptionState."""
     energy = 0.0
-    att_x = 0.0
-    att_y = 0.0
     mood = 0.5
     urgency = 0.0
     presence = 0.0
 
     print("\n--- Keyboard Control ---")
-    print("  0-9: energy    a/d: attention L/R    w/s: attention U/D")
-    print("  m: cycle mood  u: toggle urgency     p: toggle presence")
+    print("  0-9: energy    m: cycle mood")
+    print("  u: toggle urgency     p: toggle presence")
     print("  q: quit\n")
 
     while running_flag():
@@ -58,18 +56,6 @@ def keyboard_thread(state_holder, running_flag):
             elif ch.isdigit():
                 energy = int(ch) / 9.0
                 print(f"  energy = {energy:.2f}")
-            elif ch == 'a':
-                att_x = max(-1.0, att_x - 0.3)
-                print(f"  attention_x = {att_x:.2f}")
-            elif ch == 'd':
-                att_x = min(1.0, att_x + 0.3)
-                print(f"  attention_x = {att_x:.2f}")
-            elif ch == 'w':
-                att_y = min(1.0, att_y + 0.3)
-                print(f"  attention_y = {att_y:.2f}")
-            elif ch == 's':
-                att_y = max(-1.0, att_y - 0.3)
-                print(f"  attention_y = {att_y:.2f}")
             elif ch == 'm':
                 mood = (mood + 0.5) % 1.5  # cycles 0.0 -> 0.5 -> 1.0 -> 0.0
                 if mood > 1.0:
@@ -85,8 +71,6 @@ def keyboard_thread(state_holder, running_flag):
 
         state_holder.update(PerceptionState(
             energy=energy,
-            attention_x=att_x,
-            attention_y=att_y,
             mood=mood,
             urgency=urgency,
             presence=presence,
@@ -157,7 +141,7 @@ def main():
                 continue
 
             if t - last_log >= 2.0:
-                print(f"  [e={state.energy:.1f} m={state.mood:.1f} ax={state.attention_x:+.1f}] "
+                print(f"  [e={state.energy:.1f} m={state.mood:.1f} p={state.presence:.1f}] "
                       f"X={x:.0f} Y={y:.0f} Z={z:.0f} spd={speed:.0f}")
                 last_log = t
 

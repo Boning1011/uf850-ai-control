@@ -142,20 +142,18 @@ Camera capture and cloud VLM integration. Components:
 - **`FrameBuffer`**: thread-safe ring buffer for JPEG frames (shared between camera and dashboard)
 - **`CameraThread`**: background capture at configurable FPS (handles Windows DirectShow quirks)
 - **`VLMProvider`**: abstract interface for VLM backends
-- **`GeminiProvider`**: Gemini 2.5 Flash implementation — sends multi-frame batches, receives structured JSON output via Pydantic schema (`VLMOutput`: energy, attention_x/y, mood, presence, urgency, gesture, scene_description)
+- **`GeminiProvider`**: Gemini 2.5 Flash implementation — sends multi-frame batches, receives structured JSON output via Pydantic schema (`VLMOutput`: energy, mood, presence, urgency, gesture, scene_description)
 
 ### `motion_gen.py` — Motion Generation
 
-Parametric motion pattern generator. 7 distinct modes, each with qualitatively different movement:
+Parametric motion pattern generator. 5 distinct modes, each with qualitatively different movement:
 
 | Mode | Behavior |
 |------|----------|
 | `CALM` | Gentle breathing at center, small sinusoidal oscillation |
-| `ALERT` | Reach far forward toward attention point |
+| `ALERT` | Reach far forward, slow Y sweep |
 | `EXCITED` | Big dramatic sweeping arcs, full workspace Lissajous |
 | `PLAYFUL` | Extend forward + rapid pitch oscillation (head nod effect) |
-| `TENSE` | Reach high on Z axis, small trembling |
-| `DORMANT` | Contracted low position, barely moving |
 | `TRACK` | Real-time hand following via MediaPipe coordinates |
 
 Mode transitions are instant with a speed boost during the first 0.8s after switch. Takes perception state as input, outputs `(x, y, z, pitch, yaw, speed)` target per frame.
@@ -163,13 +161,13 @@ Mode transitions are instant with a speed boost during the first 0.8s after swit
 ### `triggers.py` — Trigger & Mode Engine
 
 Two components that sit between perception and motion:
-- **`TriggerEngine`**: detects behavioral state transitions — 11 numeric triggers (e.g. `HIGH_ENERGY`, `SUDDEN_MOVEMENT`, `HEAD_TURN_LEFT`) based on threshold crossings, plus 10 gesture triggers (e.g. `GESTURE_HEART`, `GESTURE_WAVE`) from VLM gesture detection
+- **`TriggerEngine`**: detects behavioral state transitions — 4 numeric triggers (`HIGH_ENERGY`, `SUDDEN_MOVEMENT`, `PLAYFUL_MOOD`, `HIGH_PRESENCE`) based on threshold crossings, plus 10 gesture triggers (e.g. `GESTURE_HEART`, `GESTURE_WAVE`) from VLM gesture detection
 - **`ModeEngine`**: maps active triggers to motion modes via priority-ordered rules (gesture triggers have highest priority, e.g. heart gesture → PLAYFUL, rock gesture → EXCITED)
 
 ### `persona.py` — Config & State
 
 Three components:
-- **`PerceptionState`**: dataclass with 6 continuous behavioral parameters (energy, attention_x/y, mood, presence, urgency), all auto-clamped to valid ranges
+- **`PerceptionState`**: dataclass with 4 continuous behavioral parameters (energy, mood, presence, urgency), all auto-clamped to valid ranges
 - **`StateHolder`**: thread-safe wrapper with exponential moving average smoothing (default α=0.3) for graceful transitions between VLM updates
 - **`PersonaConfig`**: loads `personas/*.yaml` — defines VLM system prompt, personality hints, motion parameters (center, amplitude, frequency, speed), safety bounds, and camera settings
 

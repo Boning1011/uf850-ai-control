@@ -15,8 +15,6 @@ class PerceptionState:
     """Continuous behavioral parameters from VLM perception.
     All floats, clamped to valid ranges on creation."""
     energy: float = 0.0          # 0.0 = dormant, 1.0 = maximum excitement
-    attention_x: float = 0.0     # -1.0 = far left, +1.0 = far right
-    attention_y: float = 0.0     # -1.0 = far low, +1.0 = far high
     mood: float = 0.5            # 0.0 = tense/wary, 0.5 = neutral, 1.0 = playful
     presence: float = 0.0        # 0.0 = nobody, 1.0 = many people / close
     urgency: float = 0.0        # 0.0 = calm scene, 1.0 = sudden dramatic change
@@ -24,8 +22,6 @@ class PerceptionState:
 
     def __post_init__(self):
         self.energy = max(0.0, min(1.0, float(self.energy)))
-        self.attention_x = max(-1.0, min(1.0, float(self.attention_x)))
-        self.attention_y = max(-1.0, min(1.0, float(self.attention_y)))
         self.mood = max(0.0, min(1.0, float(self.mood)))
         self.presence = max(0.0, min(1.0, float(self.presence)))
         self.urgency = max(0.0, min(1.0, float(self.urgency)))
@@ -43,8 +39,6 @@ class StateHolder:
         with self._lock:
             a = self._smoothing
             self._state.energy = a * self._state.energy + (1 - a) * new_state.energy
-            self._state.attention_x = a * self._state.attention_x + (1 - a) * new_state.attention_x
-            self._state.attention_y = a * self._state.attention_y + (1 - a) * new_state.attention_y
             self._state.mood = a * self._state.mood + (1 - a) * new_state.mood
             self._state.presence = a * self._state.presence + (1 - a) * new_state.presence
             self._state.urgency = a * self._state.urgency + (1 - a) * new_state.urgency
@@ -90,8 +84,6 @@ class PersonaConfig:
         self.amplitude_high = tuple(motion.get("amplitude", {}).get("high", [120, 100, 200]))
         self.frequency_low = tuple(motion.get("frequency", {}).get("low", [0.03, 0.04, 0.05]))
         self.frequency_high = tuple(motion.get("frequency", {}).get("high", [1.2, 1.5, 0.8]))
-        self.attention_range_x = tuple(motion.get("attention_range", {}).get("x", [-80, 80]))
-        self.attention_range_y = tuple(motion.get("attention_range", {}).get("y", [-60, 60]))
         self.speed_base = motion.get("speed", {}).get("base", 150)
         self.speed_energy_mult = tuple(motion.get("speed", {}).get("energy_mult", [0.3, 3.0]))
         self.blend_duration = motion.get("blend_duration", 0.5)
@@ -132,6 +124,7 @@ if __name__ == "__main__":
     print(config.full_system_prompt[:300] + "..." if len(config.full_system_prompt) > 300 else config.full_system_prompt)
     print(f"\nMotion: amplitude {config.amplitude_low} -> {config.amplitude_high}")
     print(f"Motion: frequency {config.frequency_low} -> {config.frequency_high}")
+    print(f"Motion: center {config.center}")
     print(f"Safety: X={config.bounds_x} Y={config.bounds_y} Z={config.bounds_z}")
 
     # Quick StateHolder test

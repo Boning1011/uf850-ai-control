@@ -524,22 +524,6 @@
           </div>
           <span class="param-value">0.00</span>
         </div>
-        <div class="param-row" data-param="attention_x">
-          <span class="param-label">attention_x</span>
-          <div class="param-bar-container bipolar">
-            <div class="param-bar-center"></div>
-            <div class="param-bar" style="width:0%;left:50%;background:var(--accent)"></div>
-          </div>
-          <span class="param-value">0.00</span>
-        </div>
-        <div class="param-row" data-param="attention_y">
-          <span class="param-label">attention_y</span>
-          <div class="param-bar-container bipolar">
-            <div class="param-bar-center"></div>
-            <div class="param-bar" style="width:0%;left:50%;background:var(--accent)"></div>
-          </div>
-          <span class="param-value">0.00</span>
-        </div>
         <div class="param-row" data-param="mood">
           <span class="param-label">mood</span>
           <div class="param-bar-container">
@@ -660,13 +644,11 @@ const MAX_LOG_ENTRIES = 200;
 
 const PARAM_COLORS = {
   energy: 'var(--green)',
-  attention_x: 'var(--accent)',
-  attention_y: 'var(--accent)',
   mood: 'var(--purple)',
   presence: 'var(--orange)',
   urgency: 'var(--red)',
 };
-const BIPOLAR_PARAMS = new Set(['attention_x', 'attention_y']);
+const BIPOLAR_PARAMS = new Set([]);
 const ARM_STATES = ['Ready', 'Moving', 'Sleep', 'Suspended', 'Stopping'];
 const ACTION_COLORS = { waving: 'waving', approaching: 'approaching', leaving: 'leaving', pointing: 'pointing' };
 
@@ -676,8 +658,6 @@ const MODE_COLORS = {
   ALERT:   { bg: '#388bfd26', color: '#58a6ff' },
   EXCITED: { bg: '#f8514926', color: '#f85149' },
   PLAYFUL: { bg: '#bc8cff26', color: '#bc8cff' },
-  TENSE:   { bg: '#d2992226', color: '#d29922' },
-  DORMANT: { bg: '#21262d',   color: '#484f58' },
   TRACK:   { bg: '#3fb95026', color: '#3fb950' },
   IDLE:    { bg: '#30363d',   color: '#8b949e' },
 };

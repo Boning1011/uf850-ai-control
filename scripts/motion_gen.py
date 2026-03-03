@@ -3,11 +3,9 @@ Parameterized Motion Generator v2 — per-mode distinct motion patterns.
 
 Each mode has its own motion generator producing qualitatively different movement:
   CALM:     gentle breathing at center (small sinusoidal oscillation)
-  ALERT:    reach far forward toward attention (arm stretches to max X)
+  ALERT:    reach far forward (arm stretches to max X, sweeps Y)
   EXCITED:  big dramatic sweeping arcs (full workspace lissajous)
   PLAYFUL:  extend forward + rapid J5 pitch oscillation (head nod)
-  TENSE:    reach high on Z axis (stretch up, small trembling)
-  DORMANT:  contracted low, barely moving (sleeping)
   TRACK:    real-time hand tracking via MediaPipe (follow hand position)
 
 Mode transitions are instant — no blending. Arm snaps to new pattern
@@ -40,8 +38,6 @@ class ParametricMotionGenerator:
         "ALERT":    (200, 700),
         "EXCITED":  (500, 800),
         "PLAYFUL":  (250, 700),
-        "TENSE":    (180, 700),
-        "DORMANT":  (50, 400),
         "TRACK":    (300, 700),
     }
 
@@ -146,10 +142,6 @@ class ParametricMotionGenerator:
         cfg = self.cfg
         cx, cy, cz = cfg.center
 
-        # Attention shifts center slightly
-        cx += state.attention_x * cfg.attention_range_x[1] * 0.5
-        cy += state.attention_y * cfg.attention_range_y[1] * 0.5
-
         # Small breathing: ±25mm X, ±15mm Y, ±30mm Z
         amp_x, amp_y, amp_z = 25, 15, 30
         freq = 0.15  # slow breathing ~6.7s cycle
@@ -172,18 +164,16 @@ class ParametricMotionGenerator:
         cfg = self.cfg
 
         # Target: far forward, center height
-        # Reach toward attention direction
         target_x = cfg.bounds_x[1]  # max X — full reach
-        target_y = state.attention_y * cfg.bounds_y[1] * 0.8  # follow attention in Y
         target_z = cfg.center[2]  # center height
 
-        # Slow sweep while extended: ±40mm Y, ±20mm Z
+        # Slow sweep while extended: ±60mm Y, ±20mm Z
         sweep_freq = 0.2
-        y_sweep = 40 * math.sin(2 * math.pi * sweep_freq * t)
+        y_sweep = 60 * math.sin(2 * math.pi * sweep_freq * t)
         z_breathe = 20 * math.sin(2 * math.pi * sweep_freq * t * 0.6 + 1.0)
 
         x = target_x
-        y = target_y + y_sweep
+        y = y_sweep
         z = target_z + z_breathe
 
         self._debug["pattern"] = "reach_forward"
@@ -254,53 +244,6 @@ class ParametricMotionGenerator:
         self._debug["pitch_amp"] = 35
 
         return x, y, z, pitch
-
-    def _motion_tense(self, t, state):
-        """Reach high on Z axis — arm stretches up, small rapid trembling.
-
-        Like a creature standing tall, alert and shaking slightly.
-        """
-        cfg = self.cfg
-
-        # Target: close to base (for stability), very high Z
-        target_x = cfg.center[0] * 0.7  # closer to base
-        target_y = 0
-        target_z = cfg.bounds_z[1] * 0.85  # ~85% of max height
-
-        # Small rapid trembling at the top
-        tremble_freq = 3.0  # fast shaking
-        tremble_amp = 8  # small amplitude
-
-        x = target_x + tremble_amp * math.sin(2 * math.pi * tremble_freq * t)
-        y = target_y + tremble_amp * math.sin(2 * math.pi * tremble_freq * t * 1.3 + 0.4)
-        z = target_z + tremble_amp * 0.5 * math.sin(2 * math.pi * tremble_freq * t * 0.9)
-
-        self._debug["pattern"] = "reach_high"
-        self._debug["target_z"] = round(target_z, 1)
-
-        return x, y, z, 0
-
-    def _motion_dormant(self, t, state):
-        """Contracted, low, barely moving — sleeping posture.
-
-        Arm curls in close to base, very low, occasional tiny movement.
-        """
-        cfg = self.cfg
-
-        # Low, close, contracted
-        target_x = cfg.bounds_x[0] + 50  # close to min X
-        target_y = 0
-        target_z = cfg.bounds_z[0] + 30  # near floor
-
-        # Barely perceptible breathing
-        breathe_freq = 0.08  # very slow ~12.5s cycle
-        x = target_x + 5 * math.sin(2 * math.pi * breathe_freq * t)
-        y = target_y + 3 * math.sin(2 * math.pi * breathe_freq * t * 1.1)
-        z = target_z + 8 * math.sin(2 * math.pi * breathe_freq * t * 0.7)
-
-        self._debug["pattern"] = "sleeping"
-
-        return x, y, z, 0
 
     def _motion_track(self, t, state):
         """Direct hand tracking — follow hand position in real time.

@@ -4,6 +4,29 @@ Development timeline — newest first. Record milestone results and verified con
 
 ---
 
+## 2026-03-03 — VLM + Motion 管线精简
+
+**目标：** 简化 VLM → Motion 管线，移除不实用的参数和模式。
+
+**VLM 输出精简（6 → 4 连续参数）：**
+- 移除 `attention_x` 和 `attention_y` — 在固定摄像头下 VLM 的注意力方向判断不可靠，且下游使用很弱（CALM 仅 ±40mm 中心偏移，ALERT 的 Y 方向扫描已用固定 sweep 替代）
+- 保留：`energy`、`mood`、`presence`、`urgency`（加 gesture、scene_description、primary_action）
+- 移除减少了 VLM 输出 token 和 prompt 复杂度
+
+**Motion 模式精简（7 → 5）：**
+- 移除 `TENSE`（mood<0.3 触发 — 实际使用中极少出现）
+- 移除 `DORMANT`（需 LOW_ENERGY + LOW_PRESENCE 同时 — 空房间边缘情况）
+- 保留：`CALM`（默认）、`ALERT`（有人在场）、`EXCITED`（高能量/手势）、`PLAYFUL`（积极手势）、`TRACK`（手部跟踪）
+
+**Trigger 精简（11 → 4 数值触发器）：**
+- 移除 7 个：HEAD_TURN_LEFT/RIGHT、LOOKING_UP/DOWN（依赖 attention_x/y）、TENSE_MOOD、LOW_ENERGY、LOW_PRESENCE（仅用于已删除模式）
+- 保留：HIGH_ENERGY、SUDDEN_MOVEMENT、PLAYFUL_MOOD、HIGH_PRESENCE
+- 10 个手势触发器保持不变
+
+**涉及文件：** perception.py, persona.py, default.yaml, triggers.py, motion_gen.py, main.py, web_server.py, dashboard HTML, 6 个 test 脚本
+
+---
+
 ## 2026-03-01 — 手部跟踪成为默认模式 + 一轮 Bug 修复
 
 **结论：** Hand tracking 模式稳定，定为 `main.py` 默认入口（无需 `--vlm` flag）。VLM 模式改为 opt-in（`--vlm`）。
@@ -90,7 +113,7 @@ Development timeline — newest first. Record milestone results and verified con
 | 1. 持续 25Hz 流式 | CALM 模式连续发送 | PASS (24.7 Hz, 0 errors) |
 | 2. 快速模式切换 | 6 个模式每 2 秒轮换 | PASS (7 次切换, 0 errors) |
 | 3. 极端位置 | 安全边界 8 个角 | PASS (4 个角 IK 不可达但无错误) |
-| 4. 速度极端 | DORMANT↔EXCITED 突变 | PASS (修复后) |
+| 4. 速度极端 | CALM↔EXCITED 突变 | PASS (修复后) |
 | 5. Pitch 摆动 | PLAYFUL 模式 J5 快速点头 | PASS (修复后) |
 | 6. 随机轰炸 | 每 0.1 秒随机参数+随机模式 | PASS |
 | 7. 边界浸泡 | 故意超出边界，验证 clamp | PASS (全部在界内) |

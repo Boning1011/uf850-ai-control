@@ -263,7 +263,7 @@ def main():
         dashboard = DashboardServer(frame_buffer, state_holder,
                                     host="0.0.0.0", port=args.port)
         dashboard.set_available_modes(
-            ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT", "TRACK"])
+            ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TRACK"])
         dashboard.start()
         logger.log_event("DASHBOARD_READY")
 
@@ -365,7 +365,6 @@ def main():
                 raw_state = PerceptionState(
                     energy=det.energy, presence=det.confidence,
                     mood=0.5, urgency=0.0,
-                    attention_x=0.0, attention_y=0.0,
                     timestamp=time.time(),
                 )
                 state_holder.update(raw_state)

@@ -16,7 +16,7 @@ Problems: every new behavior requires a full CG pipeline round-trip, animations 
 
 **Two parallel modes:**
 
-**A. VLM Mode** — Google Gemini 2.5 Flash analyzes camera frames at ~1 Hz and outputs structured scene understanding via JSON schema (energy, attention_x/y, mood, presence, urgency). Multiple frames per call (~5 frames, 0.2s apart) allow detection of dynamic gestures. VLM runs asynchronously; PerceptionState is smoothed with exponential moving average (EMA factor 0.3) to avoid jitter.
+**A. VLM Mode** — Google Gemini 2.5 Flash analyzes camera frames at ~1 Hz and outputs structured scene understanding via JSON schema (energy, mood, presence, urgency + gesture + scene_description). Multiple frames per call (~5 frames, 0.2s apart) allow detection of dynamic gestures. VLM runs asynchronously; PerceptionState is smoothed with exponential moving average (EMA factor 0.3) to avoid jitter.
 
 **B. Hand Tracking Mode (Default)** — MediaPipe HandLandmarker runs locally in a background thread at full camera speed, with no cloud API dependency. Right hand controls arm XYZ position; left hand controls pitch orientation (pitch-only, ±50°). Camera feed is mirrored horizontally for natural interaction; MediaPipe hand labels are swapped accordingly.
 

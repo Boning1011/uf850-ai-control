@@ -5,7 +5,7 @@ Exercises the servo pipeline under various challenging conditions:
   Phase 1: Sustained 25Hz streaming — baseline stability (30s)
   Phase 2: Rapid mode switching — all 6 modes cycled every 2s (30s)
   Phase 3: Extreme positions — hit all 8 corners of the safety bounds (24s)
-  Phase 4: Speed extremes — DORMANT (50mm/s) then EXCITED (800mm/s boost) (20s)
+  Phase 4: Speed extremes — CALM (120mm/s) then EXCITED (800mm/s boost) (20s)
   Phase 5: Pitch oscillation — PLAYFUL rapid J5 nod (15s)
   Phase 6: Random state bombardment — random params every 0.1s (20s)
   Phase 7: Boundary soak — hold at bounds for position-clamp drift check (15s)
@@ -179,11 +179,11 @@ def phase_2_rapid_mode_switch(ctrl, motion_gen, duration):
     print(f"Phase 2: Rapid mode switching ({duration}s)")
     print(f"{'='*60}", flush=True)
 
-    modes = ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT"]
+    modes = ["CALM", "ALERT", "EXCITED", "PLAYFUL"]
     stats = StressStats("Rapid mode switch")
     stats.start()
 
-    state = PerceptionState(energy=0.6, attention_x=0.3, mood=0.5,
+    state = PerceptionState(energy=0.6, mood=0.5,
                             presence=0.7, timestamp=time.time())
     t = 0.0
     initial_errors = ctrl.error_count
@@ -296,7 +296,7 @@ def phase_3_extreme_positions(ctrl, motion_gen, duration_per_corner):
 
 
 def phase_4_speed_extremes(ctrl, motion_gen, duration):
-    """Phase 4: Alternate between DORMANT (slowest) and EXCITED (fastest)."""
+    """Phase 4: Alternate between CALM (slowest) and EXCITED (fastest)."""
     print(f"\n{'='*60}")
     print(f"Phase 4: Speed extremes ({duration}s)")
     print(f"{'='*60}", flush=True)
@@ -310,8 +310,8 @@ def phase_4_speed_extremes(ctrl, motion_gen, duration):
     toggle_interval = 5.0
     next_toggle = toggle_interval
 
-    # Start dormant
-    motion_gen.set_mode("DORMANT")
+    # Start calm (low energy)
+    motion_gen.set_mode("CALM")
     state = PerceptionState(energy=0.0, mood=0.5, timestamp=time.time())
 
     while time.monotonic() < deadline and ctrl.running:
@@ -324,14 +324,14 @@ def phase_4_speed_extremes(ctrl, motion_gen, duration):
 
         # Toggle between extremes
         if t >= next_toggle:
-            if motion_gen.current_mode == "DORMANT":
+            if motion_gen.current_mode == "CALM":
                 motion_gen.set_mode("EXCITED")
                 state = PerceptionState(energy=1.0, mood=0.5, timestamp=time.time())
                 print(f"    -> EXCITED (max speed)", flush=True)
             else:
-                motion_gen.set_mode("DORMANT")
+                motion_gen.set_mode("CALM")
                 state = PerceptionState(energy=0.0, mood=0.5, timestamp=time.time())
-                print(f"    -> DORMANT (min speed)", flush=True)
+                print(f"    -> CALM (min speed)", flush=True)
             next_toggle += toggle_interval
 
         x, y, z, pitch = motion_gen.get_target(t, state)
@@ -370,7 +370,7 @@ def phase_6_random_state(ctrl, motion_gen, duration):
     print(f"Phase 6: Random state bombardment ({duration}s)")
     print(f"{'='*60}", flush=True)
 
-    modes = ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT"]
+    modes = ["CALM", "ALERT", "EXCITED", "PLAYFUL"]
     stats = StressStats("Random state bombardment")
     stats.start()
     initial_errors = ctrl.error_count
@@ -393,8 +393,6 @@ def phase_6_random_state(ctrl, motion_gen, duration):
         if t >= next_change:
             state = PerceptionState(
                 energy=random.random(),
-                attention_x=random.uniform(-1, 1),
-                attention_y=random.uniform(-1, 1),
                 mood=random.random(),
                 presence=random.random(),
                 urgency=random.random(),

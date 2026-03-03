@@ -13,17 +13,10 @@ class TriggerEngine:
     """Detects behavioral triggers from VLM state changes."""
 
     TRIGGERS = {
-        "HEAD_TURN_LEFT":   {"field": "attention_x", "op": "<",  "val": -0.4},
-        "HEAD_TURN_RIGHT":  {"field": "attention_x", "op": ">",  "val": 0.4},
-        "LOOKING_UP":       {"field": "attention_y", "op": ">",  "val": 0.4},
-        "LOOKING_DOWN":     {"field": "attention_y", "op": "<",  "val": -0.4},
         "HIGH_ENERGY":      {"field": "energy",      "op": ">",  "val": 0.6},
-        "LOW_ENERGY":       {"field": "energy",      "op": "<",  "val": 0.15},
         "SUDDEN_MOVEMENT":  {"field": "urgency",     "op": ">",  "val": 0.5},
         "PLAYFUL_MOOD":     {"field": "mood",        "op": ">",  "val": 0.7},
-        "TENSE_MOOD":       {"field": "mood",        "op": "<",  "val": 0.3},
         "HIGH_PRESENCE":    {"field": "presence",    "op": ">",  "val": 0.5},
-        "LOW_PRESENCE":     {"field": "presence",    "op": "<",  "val": 0.15},
     }
 
     # Gesture string -> trigger name mapping. Any gesture not "none" fires a trigger.
@@ -121,14 +114,12 @@ class TriggerEngine:
         return newly_fired
 
     def _state_summary(self, s):
-        return (f"e={s.energy:.2f} ax={s.attention_x:+.2f} ay={s.attention_y:+.2f} "
-                f"m={s.mood:.2f} p={s.presence:.2f} u={s.urgency:.2f}")
+        return (f"e={s.energy:.2f} m={s.mood:.2f} "
+                f"p={s.presence:.2f} u={s.urgency:.2f}")
 
     def _compute_deltas(self, old, new):
         return {
             "energy": new.energy - old.energy,
-            "att_x": new.attention_x - old.attention_x,
-            "att_y": new.attention_y - old.attention_y,
             "mood": new.mood - old.mood,
             "presence": new.presence - old.presence,
             "urgency": new.urgency - old.urgency,
@@ -143,7 +134,7 @@ class ModeEngine:
     main loop to flush the arm command queue for a snappy transition.
     """
 
-    VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT", "TRACK"}
+    VALID_MODES = {"CALM", "ALERT", "EXCITED", "PLAYFUL", "TRACK"}
 
     # Priority-ordered rules: first match wins (highest priority first)
     # Gesture triggers are HIGHEST priority — they always override numeric triggers.
@@ -164,13 +155,7 @@ class ModeEngine:
         ({"HIGH_ENERGY"},                     "EXCITED"),
         ({"SUDDEN_MOVEMENT"},                 "EXCITED"),
         ({"PLAYFUL_MOOD"},                    "PLAYFUL"),
-        ({"TENSE_MOOD"},                      "TENSE"),
         ({"HIGH_PRESENCE"},                   "ALERT"),
-        ({"HEAD_TURN_LEFT"},                  "ALERT"),
-        ({"HEAD_TURN_RIGHT"},                 "ALERT"),
-        ({"LOOKING_UP"},                      "ALERT"),
-        ({"LOOKING_DOWN"},                    "ALERT"),
-        ({"LOW_ENERGY", "LOW_PRESENCE"},      "DORMANT"),
     ]
 
     def __init__(self, **_kwargs):
@@ -192,10 +177,6 @@ class ModeEngine:
             if required_triggers <= active_triggers:
                 new_mode = mode
                 break
-
-        # Special case: DORMANT requires BOTH LOW_ENERGY and LOW_PRESENCE
-        if new_mode == "CALM" and {"LOW_ENERGY", "LOW_PRESENCE"} <= active_triggers:
-            new_mode = "DORMANT"
 
         old_mode = self.current_mode
         if new_mode != old_mode:

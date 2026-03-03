@@ -31,8 +31,6 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 class VLMOutput(BaseModel):
     """Structured perception output from VLM. All fields enforced by schema."""
     energy: float = Field(description="Activation level. 0.0=dormant/sleeping, 1.0=maximum excitement")
-    attention_x: float = Field(description="Horizontal focus. -1.0=far left, 0.0=center, 1.0=far right")
-    attention_y: float = Field(description="Vertical focus. -1.0=bottom, 0.0=center, 1.0=top")
     mood: float = Field(description="Emotional coloring. 0.0=tense/wary, 0.5=neutral, 1.0=playful/joyful")
     presence: float = Field(description="Audience amount. 0.0=empty room, 1.0=many people very close")
     urgency: float = Field(description="Sudden change. 0.0=stable scene, 1.0=dramatic sudden change")
@@ -186,8 +184,7 @@ class CameraThread:
                 continue
 
             # Mirror horizontally — matches hand tracking view for consistent
-            # dashboard display. VLM sees the mirrored frame too, which means
-            # attention_x tracks "screen direction" not "reality direction".
+            # dashboard display.
             frame = cv2.flip(frame, 1)
 
             _, jpeg = cv2.imencode('.jpg', frame,
@@ -247,8 +244,6 @@ class PerceptionThread:
 
                 state = PerceptionState(
                     energy=result.get("energy", 0.0),
-                    attention_x=result.get("attention_x", 0.0),
-                    attention_y=result.get("attention_y", 0.0),
                     mood=result.get("mood", 0.5),
                     presence=result.get("presence", 0.0),
                     urgency=result.get("urgency", 0.0),
@@ -264,8 +259,8 @@ class PerceptionThread:
                 gesture_tag = f" gesture={self.last_gesture}" if self.last_gesture != "none" else ""
                 scene_tag = f" [{self.last_primary_action}] {self.last_scene_description}" if self.last_scene_description else ""
                 print(f"[VLM] #{self.call_count} ({latency:.1f}s) "
-                      f"e={state.energy:.2f} ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
-                      f"m={state.mood:.2f} p={state.presence:.2f} u={state.urgency:.2f}"
+                      f"e={state.energy:.2f} m={state.mood:.2f} "
+                      f"p={state.presence:.2f} u={state.urgency:.2f}"
                       f"{gesture_tag}{scene_tag}", flush=True)
 
                 if self.on_result:

@@ -65,11 +65,9 @@ class PipelineLogger:
 
     def log_vlm_call(self, call_num, latency, raw_state, smoothed_state, motion_xyz, speed):
         now = datetime.datetime.now().strftime("%H:%M:%S")
-        raw = (f"e={raw_state.energy:.2f} ax={raw_state.attention_x:+.2f} "
-               f"ay={raw_state.attention_y:+.2f} m={raw_state.mood:.2f} "
+        raw = (f"e={raw_state.energy:.2f} m={raw_state.mood:.2f} "
                f"p={raw_state.presence:.2f} u={raw_state.urgency:.2f}")
-        smoothed = (f"e={smoothed_state.energy:.2f} ax={smoothed_state.attention_x:+.2f} "
-                    f"ay={smoothed_state.attention_y:+.2f} m={smoothed_state.mood:.2f} "
+        smoothed = (f"e={smoothed_state.energy:.2f} m={smoothed_state.mood:.2f} "
                     f"p={smoothed_state.presence:.2f} u={smoothed_state.urgency:.2f}")
         mx, my, mz = motion_xyz
         self.f.write(f"| {now} | VLM #{call_num} ({latency:.1f}s) | "
@@ -219,8 +217,6 @@ def main():
                 # Raw state from VLM
                 raw_state = PerceptionState(
                     energy=result.get("energy", 0.0),
-                    attention_x=result.get("attention_x", 0.0),
-                    attention_y=result.get("attention_y", 0.0),
                     mood=result.get("mood", 0.5),
                     presence=result.get("presence", 0.0),
                     urgency=result.get("urgency", 0.0),
@@ -249,8 +245,7 @@ def main():
                 # Console output
                 active_str = ", ".join(sorted(trigger_engine.active_triggers)) or "(none)"
                 print(f"[#{call_count} {latency:.1f}s] "
-                      f"e={raw_state.energy:.2f} ax={raw_state.attention_x:+.2f} "
-                      f"ay={raw_state.attention_y:+.2f} m={raw_state.mood:.2f} "
+                      f"e={raw_state.energy:.2f} m={raw_state.mood:.2f} "
                       f"p={raw_state.presence:.2f} u={raw_state.urgency:.2f} "
                       f"→ X={x:.0f} Y={y:.0f} Z={z:.0f} spd={speed:.0f} "
                       f"| triggers: {active_str}", flush=True)

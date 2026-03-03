@@ -99,8 +99,8 @@ def main():
             time.sleep(1.0)
             s = state_holder.get()
             elapsed = time.time() - t0
-            print(f"  [{elapsed:5.1f}s] e={s.energy:.2f} ax={s.attention_x:+.2f} "
-                  f"ay={s.attention_y:+.2f} m={s.mood:.2f} p={s.presence:.2f} u={s.urgency:.2f}"
+            print(f"  [{elapsed:5.1f}s] e={s.energy:.2f} m={s.mood:.2f} "
+                  f"p={s.presence:.2f} u={s.urgency:.2f}"
                   f"  (vlm calls: {perception.call_count}, errors: {perception.error_count})")
     except KeyboardInterrupt:
         print("\nStopped by user.")

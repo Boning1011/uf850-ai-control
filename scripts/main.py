@@ -37,15 +37,13 @@ DT = 0.04  # 25 Hz
 def keyboard_driver(state_holder, running_flag):
     """Manual parameter control via keyboard (replaces VLM)."""
     energy = 0.0
-    att_x = 0.0
-    att_y = 0.0
     mood = 0.5
     urgency = 0.0
     presence = 0.0
 
     print("\n--- Keyboard Mode ---")
-    print("  0-9: energy    a/d: attention L/R    w/s: attention U/D")
-    print("  m: cycle mood  u: toggle urgency     p: toggle presence")
+    print("  0-9: energy    m: cycle mood")
+    print("  u: toggle urgency     p: toggle presence")
     print("  q: quit\n")
 
     while running_flag():
@@ -61,14 +59,6 @@ def keyboard_driver(state_holder, running_flag):
                 return
             elif ch.isdigit():
                 energy = int(ch) / 9.0
-            elif ch == 'a':
-                att_x = max(-1.0, att_x - 0.3)
-            elif ch == 'd':
-                att_x = min(1.0, att_x + 0.3)
-            elif ch == 'w':
-                att_y = min(1.0, att_y + 0.3)
-            elif ch == 's':
-                att_y = max(-1.0, att_y - 0.3)
             elif ch == 'm':
                 mood = round((mood + 0.5) % 1.5, 1)
                 if mood > 1.0:
@@ -79,12 +69,11 @@ def keyboard_driver(state_holder, running_flag):
                 presence = 0.0 if presence > 0 else 1.0
 
         state_holder.update(PerceptionState(
-            energy=energy, attention_x=att_x, attention_y=att_y,
+            energy=energy,
             mood=mood, urgency=urgency, presence=presence,
             timestamp=time.time(),
         ))
-        print(f"  -> e={energy:.1f} ax={att_x:+.1f} ay={att_y:+.1f} "
-              f"m={mood:.1f} u={urgency:.1f} p={presence:.1f}")
+        print(f"  -> e={energy:.1f} m={mood:.1f} u={urgency:.1f} p={presence:.1f}")
 
 
 def mock_camera_fill(frame_buffer, running_flag):
@@ -603,7 +592,7 @@ def main():
                 yaw_info = f" W={yaw:.0f}" if yaw != 0 else ""
                 print(f"  [{motion_gen.current_mode}] "
                       f"e={state.energy:.2f} m={state.mood:.2f} "
-                      f"ax={state.attention_x:+.2f} ay={state.attention_y:+.2f} "
+                      f"p={state.presence:.2f} u={state.urgency:.2f} "
                       f"X={x:.0f} Y={y:.0f} Z={z:.0f}{pitch_info}{yaw_info} "
                       f"spd={speed:.0f}{vlm_info}")
 

@@ -176,16 +176,12 @@ class DashboardServer:
         """Push VLM state update. Called from perception/main threads."""
         raw_dict = {
             "energy": round(raw_state.energy, 3),
-            "attention_x": round(raw_state.attention_x, 3),
-            "attention_y": round(raw_state.attention_y, 3),
             "mood": round(raw_state.mood, 3),
             "presence": round(raw_state.presence, 3),
             "urgency": round(raw_state.urgency, 3),
         }
         smoothed_dict = {
             "energy": round(smoothed_state.energy, 3),
-            "attention_x": round(smoothed_state.attention_x, 3),
-            "attention_y": round(smoothed_state.attention_y, 3),
             "mood": round(smoothed_state.mood, 3),
             "presence": round(smoothed_state.presence, 3),
             "urgency": round(smoothed_state.urgency, 3),

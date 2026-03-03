@@ -1,7 +1,7 @@
 """
 Test dramatic mode transitions on simulator.
 
-Cycles through all 6 modes (CALM -> ALERT -> EXCITED -> PLAYFUL -> TENSE -> DORMANT)
+Cycles through all 4 modes (CALM -> ALERT -> EXCITED -> PLAYFUL)
 with 8-second hold per mode to verify:
   1. Each mode produces distinct, visible motion
   2. Transitions are fast (flush queue + speed boost)
@@ -25,7 +25,7 @@ from motion_gen import ParametricMotionGenerator
 
 DT = 0.04  # 25 Hz
 
-MODE_SEQUENCE = ["CALM", "ALERT", "EXCITED", "PLAYFUL", "TENSE", "DORMANT"]
+MODE_SEQUENCE = ["CALM", "ALERT", "EXCITED", "PLAYFUL"]
 HOLD_SECONDS = 8  # seconds per mode
 
 
@@ -45,8 +45,7 @@ def main():
 
     # Create a default state (moderate energy, centered attention)
     state = PerceptionState(
-        energy=0.5, attention_x=0.0, attention_y=0.0,
-        mood=0.5, presence=0.5, urgency=0.0,
+        energy=0.5, mood=0.5, presence=0.5, urgency=0.0,
         timestamp=time.time(),
     )
 

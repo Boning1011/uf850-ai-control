@@ -93,11 +93,9 @@ def main():
 
     print(f"\n--- Result ({latency:.1f}s) ---")
     state = PerceptionState(**{k: result[k] for k in
-                               ["energy", "attention_x", "attention_y", "mood", "presence", "urgency"]},
+                               ["energy", "mood", "presence", "urgency"]},
                             timestamp=time.time())
     print(f"  energy:      {state.energy:.3f}")
-    print(f"  attention_x: {state.attention_x:+.3f}")
-    print(f"  attention_y: {state.attention_y:+.3f}")
     print(f"  mood:        {state.mood:.3f}")
     print(f"  presence:    {state.presence:.3f}")
     print(f"  urgency:     {state.urgency:.3f}")

@@ -12,8 +12,6 @@ vlm:
 
     Output your assessment as continuous behavioral parameters:
     - energy: how activated should the creature be? 0.0 = sleeping/dormant, 1.0 = wildly excited
-    - attention_x: horizontal focus in the frame. -1.0 = far left, 0.0 = center, 1.0 = far right
-    - attention_y: vertical focus in the frame. -1.0 = bottom, 0.0 = center, 1.0 = top
     - mood: emotional coloring. 0.0 = tense/wary, 0.5 = neutral/calm, 1.0 = playful/delighted
     - presence: how much audience is sensed. 0.0 = empty room, 1.0 = many people very close
     - urgency: sudden change detection. 0.0 = stable/gradual, 1.0 = dramatic sudden change
@@ -59,7 +57,6 @@ vlm:
     A wave catches your full attention immediately (energy=0.7, urgency=0.7).
     You notice small details — a tilted head, a hesitant step.
     Quick, jerky movements raise your attention and energy.
-    When the room is empty, you drift into a peaceful dormant state.
 
   rate_hz: 1.0
   provider: gemini
@@ -76,10 +73,6 @@ motion:
   frequency:
     low: [0.03, 0.04, 0.05]   # energy=0: glacial drift
     high: [1.2, 1.5, 0.8]     # energy=1: rapid oscillation
-
-  attention_range:
-    x: [-80, 80]     # attention_x shifts center in arm-X (forward/back)
-    y: [-60, 60]     # attention_y shifts center in arm-Y (left/right)
 
   speed:
     base: 150
