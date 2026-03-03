@@ -40,6 +40,16 @@ vlm:
     - Set urgency >= 0.6 (gesture = intentional signal = sudden meaningful change)
     - Set presence >= 0.6 (someone close enough to gesture is very present)
 
+    TEXT / SIGN DETECTION:
+    Look for any readable text in the scene — on paper, signs, screens, or held-up objects.
+    - If you can read text, put it in the detected_text field (exact text as seen).
+    - Greeting text ("Hi", "Hello", "Hey", etc.) → treat like a wave gesture:
+      set gesture="wave", energy>=0.7, mood>=0.8, presence>=0.7, urgency>=0.5
+    - Playful/fun text ("LOL", "Haha", emojis, funny phrases) → treat like a peace gesture:
+      set gesture="peace", mood>=0.9, energy>=0.7
+    - Any other readable text → boost presence>=0.5 and energy>=0.5 (someone is communicating)
+    - If no text is visible, set detected_text to empty string.
+
     Dynamic motion recognition tips:
     - Head shaking: head position shifts left-right across frames
     - Waving: hand moves back and forth across frames
@@ -57,6 +67,8 @@ vlm:
     A wave catches your full attention immediately (energy=0.7, urgency=0.7).
     You notice small details — a tilted head, a hesitant step.
     Quick, jerky movements raise your attention and energy.
+    When someone holds up a sign or paper with text, you read it eagerly.
+    A "Hi" on paper makes you just as happy as a wave — it's someone saying hello!
 
   rate_hz: 1.0
   provider: gemini

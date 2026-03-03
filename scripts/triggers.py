@@ -161,6 +161,18 @@ class ModeEngine:
     def __init__(self, **_kwargs):
         self.current_mode = "CALM"
         self.mode_just_changed = False
+        self._forced_mode = None  # manual override from dashboard
+
+    def force_mode(self, mode):
+        """Force a specific mode, bypassing trigger evaluation.
+        Pass None to release the override."""
+        if mode is not None and mode not in self.VALID_MODES:
+            return
+        self._forced_mode = mode
+
+    @property
+    def is_forced(self):
+        return self._forced_mode is not None
 
     def update(self, active_triggers: set) -> tuple[str, str]:
         """Determine mode from active triggers — instant switch.
@@ -171,12 +183,16 @@ class ModeEngine:
         Returns:
             (old_mode, new_mode)
         """
-        # Determine target mode (first matching rule wins)
-        new_mode = "CALM"
-        for required_triggers, mode in self.TRIGGER_RULES:
-            if required_triggers <= active_triggers:
-                new_mode = mode
-                break
+        # Manual override takes precedence
+        if self._forced_mode is not None:
+            new_mode = self._forced_mode
+        else:
+            # Determine target mode (first matching rule wins)
+            new_mode = "CALM"
+            for required_triggers, mode in self.TRIGGER_RULES:
+                if required_triggers <= active_triggers:
+                    new_mode = mode
+                    break
 
         old_mode = self.current_mode
         if new_mode != old_mode:

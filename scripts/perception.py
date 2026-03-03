@@ -35,6 +35,7 @@ class VLMOutput(BaseModel):
     presence: float = Field(description="Audience amount. 0.0=empty room, 1.0=many people very close")
     urgency: float = Field(description="Sudden change. 0.0=stable scene, 1.0=dramatic sudden change")
     gesture: str = Field(default="none", description="Detected hand gesture. One of: none, heart, thumbs_up, rock, peace, wave, pointing, open_palm, fist, ok, other")
+    detected_text: str = Field(default="", description="Any readable text visible in the scene (on paper, signs, screens). Empty string if none.")
     scene_description: str = Field(default="", description="Scene description in English, 20-40 words. Describe who is present, what they are doing, their posture, and spatial arrangement.")
     primary_action: str = Field(default="idle", description="Primary detected action: idle, sitting, standing, waving, approaching, leaving, pointing, leaning, drinking, talking, unknown")
 
@@ -216,6 +217,7 @@ class PerceptionThread:
         self.last_scene_description = ""
         self.last_primary_action = "idle"
         self.last_gesture = "none"
+        self.last_detected_text = ""
 
     def start(self):
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -255,13 +257,15 @@ class PerceptionThread:
                 self.last_scene_description = str(result.get("scene_description", ""))
                 self.last_primary_action = str(result.get("primary_action", "idle"))
                 self.last_gesture = str(result.get("gesture", "none"))
+                self.last_detected_text = str(result.get("detected_text", ""))
 
                 gesture_tag = f" gesture={self.last_gesture}" if self.last_gesture != "none" else ""
+                text_tag = f" text=\"{self.last_detected_text}\"" if self.last_detected_text else ""
                 scene_tag = f" [{self.last_primary_action}] {self.last_scene_description}" if self.last_scene_description else ""
                 print(f"[VLM] #{self.call_count} ({latency:.1f}s) "
                       f"e={state.energy:.2f} m={state.mood:.2f} "
                       f"p={state.presence:.2f} u={state.urgency:.2f}"
-                      f"{gesture_tag}{scene_tag}", flush=True)
+                      f"{gesture_tag}{text_tag}{scene_tag}", flush=True)
 
                 if self.on_result:
                     try:

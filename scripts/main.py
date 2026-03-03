@@ -216,6 +216,23 @@ def main():
                 dashboard.set_status("running")
                 dashboard.push_event("COMMAND", "VLM resumed")
                 print("[Dashboard] VLM resumed", flush=True)
+            elif cmd == "force_mode":
+                target = msg.get("mode")
+                if target == mode_engine._forced_mode:
+                    # Click same forced mode -> release override
+                    mode_engine.force_mode(None)
+                    dashboard.push_mode_forced(False)
+                    dashboard.push_event("COMMAND", "Mode override released → auto")
+                    print(f"[Dashboard] Mode override released", flush=True)
+                else:
+                    mode_engine.force_mode(target)
+                    motion_gen.set_mode(target)
+                    dashboard.push_mode_forced(True)
+                    dashboard.push_mode_transition(
+                        mode_engine.current_mode, target, f"MANUAL → {target}", 1.0
+                    )
+                    dashboard.push_event("COMMAND", f"Mode forced to {target}")
+                    print(f"[Dashboard] Mode forced to {target}", flush=True)
             elif cmd == "set_input_mode":
                 target_mode = msg.get("mode", "vlm")
                 # Run in background thread — camera ops block and would
@@ -385,6 +402,7 @@ def main():
                         perception.last_scene_description,
                         perception.last_primary_action,
                         perception.last_gesture,
+                        perception.last_detected_text,
                     )
                     telemetry = ctrl.get_telemetry()
                     if telemetry:
@@ -435,6 +453,7 @@ def main():
                     perception.last_scene_description,
                     perception.last_primary_action,
                     perception.last_gesture,
+                    perception.last_detected_text,
                 )
 
                 # Push arm telemetry

@@ -389,6 +389,26 @@
     color: var(--text-dim);
     border: 1px solid var(--border);
     transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+    cursor: pointer;
+    user-select: none;
+  }
+  .mode-chip:hover { border-color: var(--text-dim); }
+
+  .mode-forced-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--orange);
+    margin-left: 4px;
+  }
+
+  @keyframes forced-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.4); }
+    50% { box-shadow: 0 0 0 3px rgba(210, 153, 34, 0.15); }
+  }
+  .mode-chip.forced {
+    animation: forced-pulse 2s ease-in-out infinite;
   }
 
   .mode-transition-detail {
@@ -497,6 +517,7 @@
       <div class="vlm-overlay-bar vlm-only" id="vlmOverlayBar">
         <span class="action-badge" id="actionBadge">idle</span>
         <span class="action-badge" id="gestureBadge" style="display:none"></span>
+        <span class="action-badge" id="textBadge" style="display:none"></span>
         <span class="scene-text-overlay" id="sceneText">Waiting for AI description...</span>
       </div>
     </div>
@@ -612,7 +633,7 @@
 
       <!-- Current Mode -->
       <div class="mode-section">
-        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Current Mode</div>
+        <div class="section-title" style="padding:0;border:none;margin-bottom:4px">Current Mode<span class="mode-forced-label" id="modeForcedLabel" style="display:none">MANUAL</span></div>
         <div class="mode-strip" id="modeStrip">
           <!-- populated dynamically from available_modes -->
         </div>
@@ -700,6 +721,12 @@ function sendCommand(cmd) {
   }
 }
 
+function sendForceMode(mode) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ command: 'force_mode', mode: mode }));
+  }
+}
+
 // ── Handlers ──
 function handleInit(msg) {
   if (msg.events) msg.events.forEach(evt => addLogEntry(evt));
@@ -745,6 +772,18 @@ function handleState(msg) {
       gb.style.color = '#fff';
     } else {
       gb.style.display = 'none';
+    }
+
+    // Detected text badge
+    const tb = document.getElementById('textBadge');
+    const dtext = msg.detected_text || '';
+    if (dtext) {
+      tb.textContent = '\u{1F4DD} ' + dtext;
+      tb.style.display = '';
+      tb.style.background = '#d2992240';
+      tb.style.color = '#d29922';
+    } else {
+      tb.style.display = 'none';
     }
   }
 
@@ -817,13 +856,14 @@ function handleState(msg) {
     if (_renderedModes !== key) {
       const strip = document.getElementById('modeStrip');
       strip.innerHTML = msg.available_modes.map(m =>
-        `<span class="mode-chip" data-mode="${m}">${m}</span>`
+        `<span class="mode-chip" data-mode="${m}" onclick="sendForceMode('${m}')" title="Click to force ${m} mode">${m}</span>`
       ).join('');
       _renderedModes = key;
     }
   }
 
   // Mode
+  if (msg.mode_forced !== undefined) _modeForced = msg.mode_forced;
   if (msg.current_mode !== undefined) {
     updateMode(msg.current_mode, msg.mode_history || []);
   }
@@ -881,6 +921,8 @@ function updateTriggers(triggers) {
   container.innerHTML = triggers.map(t => `<span class="trigger-chip">${t}</span>`).join('');
 }
 
+let _modeForced = false;
+
 function updateMode(currentMode, modeHistory) {
   // Highlight active chip in mode strip
   const chips = document.querySelectorAll('#modeStrip .mode-chip');
@@ -891,12 +933,17 @@ function updateMode(currentMode, modeHistory) {
       chip.style.background = c.bg;
       chip.style.color = c.color;
       chip.style.borderColor = c.color;
+      chip.classList.toggle('forced', _modeForced);
     } else {
       chip.style.background = '';
       chip.style.color = '';
       chip.style.borderColor = '';
+      chip.classList.remove('forced');
     }
   });
+
+  // Show/hide MANUAL label
+  document.getElementById('modeForcedLabel').style.display = _modeForced ? '' : 'none';
 
   // Transition detail
   const detail = document.getElementById('modeTransitionDetail');

@@ -43,9 +43,11 @@ class DashboardServer:
         self._scene_description = ""
         self._primary_action = "idle"
         self._gesture = "none"
+        self._detected_text = ""
         self._motion_debug = None
         self._arm_telemetry = None
         self._current_mode = "IDLE"
+        self._mode_forced = False  # True when mode is manually overridden
         self._mode_history = []  # [{time, from_mode, to_mode, action, confidence}]
         self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
         self._input_mode = "hand_tracking"  # "vlm" | "hand_tracking" | "keyboard"
@@ -120,10 +122,12 @@ class DashboardServer:
                             "scene_description": server._scene_description,
                             "primary_action": server._primary_action,
                             "gesture": server._gesture,
+                            "detected_text": server._detected_text,
                             "vlm_count": server._vlm_count,
                             "vlm_latency": server._vlm_latency,
                             "active_triggers": server._active_triggers,
                             "current_mode": server._current_mode,
+                            "mode_forced": server._mode_forced,
                             "mode_history": server._mode_history[-10:],
                             "hand_tracking": server._hand_tracking,
                             "input_mode": server._input_mode,
@@ -206,12 +210,13 @@ class DashboardServer:
                 if "mode" in motion_debug:
                     self._current_mode = motion_debug["mode"]
 
-    def push_vlm_text(self, scene_description, primary_action, gesture="none"):
+    def push_vlm_text(self, scene_description, primary_action, gesture="none", detected_text=""):
         """Push VLM scene description text. Called from perception callback."""
         with self._lock:
             self._scene_description = scene_description
             self._primary_action = primary_action
             self._gesture = gesture
+            self._detected_text = detected_text
 
     def push_arm_telemetry(self, telemetry):
         """Push arm physical telemetry dict. Called from main loop."""
@@ -240,6 +245,11 @@ class DashboardServer:
                 }
             else:
                 self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
+
+    def push_mode_forced(self, forced):
+        """Set whether mode is manually overridden."""
+        with self._lock:
+            self._mode_forced = forced
 
     def push_triggers(self, active_triggers):
         """Update active trigger list. Called after TriggerEngine.check()."""
