@@ -46,8 +46,10 @@ def Xform "uf850"
                 def Xform "joint_3"
                 {
                     double3 xformOp:translate = (0, 0.39, 0)
+                    double3 xformOp:rotateXYZ:pre = (180, 0, 0)
                     double3 xformOp:rotateXYZ = (0, 0, 0)
-                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+                    double3 xformOp:rotateXYZ:post = (-180, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ:pre", "xformOp:rotateXYZ", "xformOp:rotateXYZ:post"]
 
                     def Mesh "mesh" (
                         payload = @./joint_3.usd@</mesh>
