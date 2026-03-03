@@ -11,6 +11,7 @@ Usage:
     python main.py --vlm                 # VLM perception mode
     python main.py --vlm --no-camera     # VLM with mock camera
     python main.py --keyboard            # manual parameter control (no VLM)
+    python main.py --studio              # bare connection only (use UFactory Studio UI)
     python main.py --no-web              # disable dashboard
     python main.py --port 8080           # custom dashboard port
 """
@@ -144,6 +145,8 @@ def main():
     parser.add_argument("--persona", default="personas/default.yaml", help="Persona YAML config")
     parser.add_argument("--sensitivity", type=int, default=-1,
                         help="Collision sensitivity 0-5, -1=skip (default: -1)")
+    parser.add_argument("--studio", action="store_true",
+                        help="Bare connection only — no perception, no servo. Use UFactory Studio UI to control.")
     parser.add_argument("--keyboard", action="store_true",
                         help="Manual parameter control instead of VLM")
     parser.add_argument("--vlm", action="store_true",
@@ -362,6 +365,18 @@ def main():
         print("\nMoving to center...")
         ctrl.move_to_center()
         time.sleep(0.5)
+
+        # Studio mode: bare connection, no servo, no perception
+        if args.studio:
+            print("\n=== Studio Mode ===")
+            print(f"Arm connected at {args.ip}, position mode (mode 0).")
+            print("Use UFactory Studio web UI to control the arm.")
+            print("Press Ctrl+C to disconnect.\n")
+            if dashboard:
+                dashboard.push_event("SYSTEM", "Studio mode — use UFactory Studio UI")
+            while ctrl.running:
+                time.sleep(0.5)
+            raise KeyboardInterrupt  # jump to finally block for cleanup
 
         # Switch to servo mode for real-time streaming control
         ctrl.enable_servo()
