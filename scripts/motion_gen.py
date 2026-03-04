@@ -36,7 +36,7 @@ class ParametricMotionGenerator:
     MODE_SPEEDS = {
         "CALM":     (120, 600),
         "ALERT":    (200, 700),
-        "EXCITED":  (500, 800),
+        "EXCITED":  (250, 500),
         "PLAYFUL":  (250, 700),
         "TRACK":    (300, 700),
     }
@@ -230,16 +230,16 @@ class ParametricMotionGenerator:
         range_y = (cfg.bounds_y[1] - cfg.bounds_y[0]) * 0.30
         range_z = (cfg.bounds_z[1] - cfg.bounds_z[0]) * 0.28
 
-        # Fast lissajous with irrational frequency ratios for non-repeating paths
-        freq_base = 0.4  # ~2.5s per cycle
+        # Lissajous with irrational frequency ratios for non-repeating paths
+        freq_base = 0.2  # ~5s per cycle (slowed for real hardware safety)
         x = cx + range_x * math.sin(2 * math.pi * freq_base * t)
         y = cy + range_y * math.sin(2 * math.pi * freq_base * t * 1.618)  # golden ratio
         z = cz + range_z * math.sin(2 * math.pi * freq_base * t * 0.713 + 0.3)
 
         # Add energy modulation: higher energy = faster
-        energy_freq = _lerp(0.8, 1.5, state.energy)
-        x += 20 * math.sin(2 * math.pi * freq_base * energy_freq * t * 2.1)
-        z += 18 * math.sin(2 * math.pi * freq_base * energy_freq * t * 1.7)
+        energy_freq = _lerp(0.8, 1.3, state.energy)
+        x += 12 * math.sin(2 * math.pi * freq_base * energy_freq * t * 2.1)
+        z += 10 * math.sin(2 * math.pi * freq_base * energy_freq * t * 1.7)
 
         self._debug["pattern"] = "big_sweep"
         self._debug["range"] = [round(range_x, 1), round(range_y, 1), round(range_z, 1)]
