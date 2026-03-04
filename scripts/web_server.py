@@ -52,6 +52,7 @@ class DashboardServer:
         self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
         self._input_mode = "hand_tracking"  # "vlm" | "hand_tracking" | "keyboard"
         self._available_modes = []  # sorted list of mode names, set at startup
+        self._j1_offset = 0  # J1 base rotation offset in degrees (debug)
 
         # Event log (thread-safe deque)
         self._events = deque(maxlen=500)
@@ -132,6 +133,7 @@ class DashboardServer:
                             "hand_tracking": server._hand_tracking,
                             "input_mode": server._input_mode,
                             "available_modes": server._available_modes,
+                            "j1_offset": server._j1_offset,
                             "status": server._pipeline_status,
                         }
 
@@ -245,6 +247,16 @@ class DashboardServer:
                 }
             else:
                 self._hand_tracking = {"x": None, "y": None, "confidence": 0.0, "active": False}
+
+    def set_j1_offset(self, degrees):
+        """Set J1 base rotation offset in degrees. Thread-safe."""
+        with self._lock:
+            self._j1_offset = int(max(-90, min(90, degrees)))
+
+    def get_j1_offset(self):
+        """Get current J1 offset in degrees."""
+        with self._lock:
+            return self._j1_offset
 
     def push_mode_forced(self, forced):
         """Set whether mode is manually overridden."""

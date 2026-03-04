@@ -24,6 +24,8 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import math
+
 import cv2
 import numpy as np
 from arm_controller import ArmController, acquire_lock
@@ -241,6 +243,11 @@ def main():
                     )
                     dashboard.push_event("COMMAND", f"Mode forced to {target}")
                     print(f"[Dashboard] Mode forced to {target}", flush=True)
+            elif cmd == "set_j1_offset":
+                val = msg.get("value", 0)
+                dashboard.set_j1_offset(val)
+                dashboard.push_event("COMMAND", f"J1 offset set to {dashboard.get_j1_offset()}°")
+                print(f"[Dashboard] J1 offset = {dashboard.get_j1_offset()}°", flush=True)
             elif cmd == "set_input_mode":
                 target_mode = msg.get("mode", "vlm")
                 # Run in background thread — camera ops block and would
@@ -636,6 +643,14 @@ def main():
             state = state_holder.get()
             x, y, z, pitch, yaw = motion_gen.get_target(t, state)
             speed = motion_gen.get_speed(state)
+
+            # Apply J1 offset: rotate XY plane and yaw around base
+            j1_off = dashboard.get_j1_offset() if dashboard else 0
+            if j1_off != 0:
+                theta = math.radians(j1_off)
+                cos_t, sin_t = math.cos(theta), math.sin(theta)
+                x, y = x * cos_t - y * sin_t, x * sin_t + y * cos_t
+                yaw = yaw + j1_off
 
             ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, yaw=yaw, dt=DT)
             if ret == -2:

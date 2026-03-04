@@ -302,6 +302,42 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* J1 Offset */
+  .j1-offset-section {
+    border-top: 1px solid var(--border);
+    padding: 6px 12px;
+  }
+  .j1-offset-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .j1-offset-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 4px;
+    cursor: pointer;
+  }
+  .j1-offset-value {
+    width: 42px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .j1-offset-reset {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+  }
+  .j1-offset-reset:hover { border-color: var(--accent); color: var(--text); }
+
   /* Arm Status */
   .arm-section {
     border-top: 1px solid var(--border);
@@ -603,6 +639,17 @@
         </div>
       </div>
 
+      <!-- J1 Offset (debug) -->
+      <div class="j1-offset-section">
+        <div class="section-title" style="padding:0;border:none;margin-bottom:2px">J1 Offset</div>
+        <div class="j1-offset-row">
+          <input type="range" id="j1OffsetSlider" min="-90" max="90" step="1" value="0"
+                 oninput="onJ1OffsetChange(this.value)">
+          <span class="j1-offset-value" id="j1OffsetValue">0°</span>
+          <button class="j1-offset-reset" onclick="resetJ1Offset()" title="Reset to 0°">Reset</button>
+        </div>
+      </div>
+
       <!-- Arm Status -->
       <div class="arm-section">
         <div class="section-title">Arm Status</div>
@@ -881,6 +928,15 @@ function handleState(msg) {
     updateHandTracking(msg.hand_tracking);
   }
 
+  // J1 offset: sync slider from server state
+  if (msg.j1_offset !== undefined) {
+    const slider = document.getElementById('j1OffsetSlider');
+    if (document.activeElement !== slider) {  // don't fight user dragging
+      slider.value = msg.j1_offset;
+      document.getElementById('j1OffsetValue').textContent = msg.j1_offset + '°';
+    }
+  }
+
   // Input mode: update body attribute for CSS tab switching + button highlight
   if (msg.input_mode) {
     document.body.dataset.inputMode = msg.input_mode;
@@ -1018,6 +1074,21 @@ function switchInputMode(mode) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ command: 'set_input_mode', mode: mode }));
   }
+}
+
+// ── J1 Offset ──
+function onJ1OffsetChange(val) {
+  val = parseInt(val, 10);
+  document.getElementById('j1OffsetValue').textContent = val + '°';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ command: 'set_j1_offset', value: val }));
+  }
+}
+
+function resetJ1Offset() {
+  const slider = document.getElementById('j1OffsetSlider');
+  slider.value = 0;
+  onJ1OffsetChange(0);
 }
 
 // ── Init ──
