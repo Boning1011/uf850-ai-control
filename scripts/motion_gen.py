@@ -38,7 +38,7 @@ class ParametricMotionGenerator:
         "ALERT":    (200, 700),
         "EXCITED":  (250, 500),
         "PLAYFUL":  (250, 700),
-        "TRACK":    (300, 700),
+        "TRACK":    (200, 700),
     }
 
     TRANSITION_BOOST_DURATION = 0.8  # seconds of high speed after mode switch
@@ -47,6 +47,10 @@ class ParametricMotionGenerator:
     # Higher values = smoother but laggier. 0.85 feels responsive yet stable.
     HAND_SMOOTH = 0.85
     HAND_RPY_SMOOTH = 0.88  # RPY needs heavier smoothing (amplified noise)
+
+    # Grace period (seconds) to hold last known position when hand detection
+    # is briefly lost. Prevents jumps from single-frame MediaPipe drops.
+    HAND_LOST_GRACE = 0.5
 
     def __init__(self, persona_config):
         self.cfg = persona_config
@@ -57,6 +61,7 @@ class ParametricMotionGenerator:
         self._hand_rpy_target = None  # (pitch, yaw) from second hand, or None
         self._hand_smooth = None  # EMA-smoothed (x, y, z)
         self._hand_rpy_smooth = None  # EMA-smoothed (pitch, yaw)
+        self._hand_lost_time = None  # monotonic timestamp when hand was last lost
 
     def set_mode(self, mode_name):
         """Switch to a new mode. Resets transition timer for speed boost."""
@@ -114,9 +119,22 @@ class ParametricMotionGenerator:
         Raw position is EMA-smoothed to eliminate MediaPipe jitter.
         """
         if hand_x is None:
+            # Grace period: hold last known position for brief detection drops.
+            # Only clear after HAND_LOST_GRACE seconds of continuous loss.
+            if self._hand_smooth is not None:
+                if self._hand_lost_time is None:
+                    self._hand_lost_time = time.monotonic()
+                elapsed = time.monotonic() - self._hand_lost_time
+                if elapsed < self.HAND_LOST_GRACE:
+                    return  # keep _hand_target at last smooth position
+            # Grace expired or no prior smooth state — clear everything
             self._hand_target = None
             self._hand_smooth = None
+            self._hand_lost_time = None
             return
+        # Hand re-detected — reset lost timer
+        self._hand_lost_time = None
+
         cfg = self.cfg
         # Amplify horizontal movement: center 50% of frame covers full Y range
         hand_x_scaled = _clamp(0.5 + (hand_x - 0.5) * 2.0, 0.0, 1.0)
@@ -291,10 +309,6 @@ class ParametricMotionGenerator:
 
         x, y, z = self._hand_target
         cfg = self.cfg
-
-        # Tiny breathing overlay keeps the arm feeling alive
-        x += 3 * math.sin(2 * math.pi * 0.3 * t)
-        z += 5 * math.sin(2 * math.pi * 0.2 * t)
 
         if self._hand_rpy_target is not None:
             # ── Two-hand mode: second hand directly controls pitch & yaw ──

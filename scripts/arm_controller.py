@@ -307,6 +307,17 @@ class ArmController:
         max_deg = spd * dt * 0.3  # rotation scaling (conservative)
 
         clamped = self._velocity_clamp(self._last_servo_pos, target, max_mm, max_deg)
+
+        # Dead-zone: if position barely changed, hold last position to suppress
+        # micro-oscillation from sensor noise. Re-send last pos (don't skip —
+        # servo mode requires continuous commands at expected rate).
+        pos_delta = math.sqrt(sum((clamped[i] - self._last_servo_pos[i]) ** 2
+                                  for i in range(3)))
+        rot_delta = max(abs(clamped[i] - self._last_servo_pos[i])
+                        for i in range(3, 6))
+        if pos_delta < 2.0 and rot_delta < 0.5:
+            clamped = list(self._last_servo_pos)
+
         ret = self.arm.set_servo_cartesian(clamped, is_radian=False)
         if ret == 0:
             self._last_servo_pos = list(clamped)
