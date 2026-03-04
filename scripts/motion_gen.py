@@ -25,6 +25,64 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+class OneEuroFilter:
+    """1-Euro filter: adaptive low-pass for noisy real-time signals.
+
+    Heavy smoothing when input is nearly stationary (kills jitter),
+    light smoothing when input moves fast (stays responsive).
+
+    Reference: Casiez et al., "1 Euro Filter", CHI 2012.
+    """
+
+    def __init__(self, min_cutoff=1.0, beta=0.007, d_cutoff=1.0):
+        self.min_cutoff = min_cutoff  # Hz — cutoff when stationary (lower = smoother)
+        self.beta = beta              # speed coefficient (higher = more responsive)
+        self.d_cutoff = d_cutoff      # Hz — derivative smoothing cutoff
+        self._x = None
+        self._dx = 0.0
+        self._t = None
+
+    @staticmethod
+    def _alpha(cutoff, dt):
+        if dt <= 0:
+            return 1.0
+        tau = 1.0 / (2.0 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def __call__(self, x, t=None):
+        if t is None:
+            t = time.monotonic()
+        if self._x is None:
+            self._x = x
+            self._dx = 0.0
+            self._t = t
+            return x
+
+        dt = t - self._t
+        if dt <= 1e-6:
+            return self._x
+
+        # Smooth the derivative
+        dx = (x - self._x) / dt
+        a_d = self._alpha(self.d_cutoff, dt)
+        self._dx = a_d * dx + (1.0 - a_d) * self._dx
+
+        # Adaptive cutoff: higher speed -> higher cutoff -> less smoothing
+        cutoff = self.min_cutoff + self.beta * abs(self._dx)
+
+        # Smooth the value
+        a = self._alpha(cutoff, dt)
+        self._x = a * x + (1.0 - a) * self._x
+
+        self._t = t
+        return self._x
+
+    def reset(self):
+        self._x = None
+        self._dx = 0.0
+        self._t = None
+
+
 class ParametricMotionGenerator:
     """Generate (x, y, z, pitch, yaw) targets from mode + continuous state + time.
 
@@ -43,11 +101,6 @@ class ParametricMotionGenerator:
 
     TRANSITION_BOOST_DURATION = 0.8  # seconds of high speed after mode switch
 
-    # EMA smoothing factor for hand tracking input (0 = no smoothing, 1 = frozen).
-    # Higher values = smoother but laggier. 0.85 feels responsive yet stable.
-    HAND_SMOOTH = 0.85
-    HAND_RPY_SMOOTH = 0.88  # RPY needs heavier smoothing (amplified noise)
-
     # Grace period (seconds) to hold last known position when hand detection
     # is briefly lost. Prevents jumps from single-frame MediaPipe drops.
     HAND_LOST_GRACE = 0.5
@@ -59,9 +112,19 @@ class ParametricMotionGenerator:
         self._debug = {}
         self._hand_target = None  # (x, y, z) in arm mm, set by hand tracking
         self._hand_rpy_target = None  # (pitch, yaw) from second hand, or None
-        self._hand_smooth = None  # EMA-smoothed (x, y, z)
-        self._hand_rpy_smooth = None  # EMA-smoothed (pitch, yaw)
         self._hand_lost_time = None  # monotonic timestamp when hand was last lost
+
+        # One-Euro filters for hand tracking (per-axis, adaptive smoothing).
+        # min_cutoff: stationary smoothing (lower = smoother). beta: speed response.
+        self._pos_filters = [
+            OneEuroFilter(min_cutoff=1.0, beta=0.007, d_cutoff=1.0),  # X
+            OneEuroFilter(min_cutoff=1.0, beta=0.007, d_cutoff=1.0),  # Y
+            OneEuroFilter(min_cutoff=1.0, beta=0.007, d_cutoff=1.0),  # Z
+        ]
+        self._rpy_filters = [
+            OneEuroFilter(min_cutoff=0.8, beta=0.004, d_cutoff=1.0),  # pitch
+            OneEuroFilter(min_cutoff=0.8, beta=0.004, d_cutoff=1.0),  # yaw
+        ]
 
     def set_mode(self, mode_name):
         """Switch to a new mode. Resets transition timer for speed boost."""
@@ -116,20 +179,21 @@ class ParametricMotionGenerator:
           hand_y (vertical, 0=top) -> arm Z (inverted: top = high Z)
           arm X: fixed at comfortable forward reach
 
-        Raw position is EMA-smoothed to eliminate MediaPipe jitter.
+        Raw position is filtered through a One-Euro adaptive filter to
+        eliminate jitter while preserving fast movement responsiveness.
         """
         if hand_x is None:
             # Grace period: hold last known position for brief detection drops.
             # Only clear after HAND_LOST_GRACE seconds of continuous loss.
-            if self._hand_smooth is not None:
+            if self._hand_target is not None:
                 if self._hand_lost_time is None:
                     self._hand_lost_time = time.monotonic()
-                elapsed = time.monotonic() - self._hand_lost_time
-                if elapsed < self.HAND_LOST_GRACE:
-                    return  # keep _hand_target at last smooth position
-            # Grace expired or no prior smooth state — clear everything
+                if time.monotonic() - self._hand_lost_time < self.HAND_LOST_GRACE:
+                    return  # keep _hand_target at last filtered position
+            # Grace expired or no prior state — clear everything
             self._hand_target = None
-            self._hand_smooth = None
+            for f in self._pos_filters:
+                f.reset()
             self._hand_lost_time = None
             return
         # Hand re-detected — reset lost timer
@@ -142,19 +206,14 @@ class ParametricMotionGenerator:
         arm_y = _lerp(cfg.bounds_y[0], cfg.bounds_y[1], hand_x_scaled)
         arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
         arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
-        raw = (arm_x, arm_y, arm_z)
 
-        # EMA low-pass filter: smoothed = α * old + (1-α) * new
-        if self._hand_smooth is None:
-            self._hand_smooth = raw
-        else:
-            a = self.HAND_SMOOTH
-            self._hand_smooth = (
-                a * self._hand_smooth[0] + (1 - a) * raw[0],
-                a * self._hand_smooth[1] + (1 - a) * raw[1],
-                a * self._hand_smooth[2] + (1 - a) * raw[2],
-            )
-        self._hand_target = self._hand_smooth
+        # One-Euro adaptive filter: smooth when slow, responsive when fast
+        t = time.monotonic()
+        self._hand_target = (
+            self._pos_filters[0](arm_x, t),
+            self._pos_filters[1](arm_y, t),
+            self._pos_filters[2](arm_z, t),
+        )
 
     def set_hand_rpy_input(self, hand_x, hand_y):
         """Set RPY control from second hand (normalised 0-1 coords).
@@ -165,24 +224,20 @@ class ParametricMotionGenerator:
           hand_y (vertical, 0=top) -> pitch: center(0.5) = 0°, range ±50°
 
         Pass None to clear (reverts to single-hand boundary lean).
-        Raw value is EMA-smoothed to eliminate jitter.
+        Raw value is filtered through a One-Euro adaptive filter.
         """
         if hand_x is None:
             self._hand_rpy_target = None
-            self._hand_rpy_smooth = None
+            for f in self._rpy_filters:
+                f.reset()
             return
         pitch = -(hand_y - 0.5) * 2.0 * 50.0      # ±50°, inverted (top=positive)
-        raw = (pitch, 0)
 
-        if self._hand_rpy_smooth is None:
-            self._hand_rpy_smooth = raw
-        else:
-            a = self.HAND_RPY_SMOOTH
-            self._hand_rpy_smooth = (
-                a * self._hand_rpy_smooth[0] + (1 - a) * raw[0],
-                a * self._hand_rpy_smooth[1] + (1 - a) * raw[1],
-            )
-        self._hand_rpy_target = self._hand_rpy_smooth
+        t = time.monotonic()
+        self._hand_rpy_target = (
+            self._rpy_filters[0](pitch, t),
+            self._rpy_filters[1](0, t),
+        )
 
     # ------------------------------------------------------------------
     # Mode-specific motion generators
