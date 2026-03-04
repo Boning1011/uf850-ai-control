@@ -172,6 +172,7 @@ def main():
     trigger_engine = TriggerEngine()
     mode_engine = ModeEngine()
     _vlm_warmup = [0]  # skip trigger/mode eval for first N VLM calls after mode switch
+    _go_home_event = threading.Event()  # highest-priority: return to zero position
 
     # Init arm
     ctrl = ArmController(
@@ -219,6 +220,10 @@ def main():
                 dashboard.set_status("running")
                 dashboard.push_event("COMMAND", "VLM resumed")
                 print("[Dashboard] VLM resumed", flush=True)
+            elif cmd == "go_home":
+                _go_home_event.set()
+                dashboard.push_event("COMMAND", "Initial Position requested (highest priority)")
+                print("[Dashboard] Initial Position requested", flush=True)
             elif cmd == "force_mode":
                 target = msg.get("mode")
                 if target == mode_engine._forced_mode:
@@ -375,6 +380,12 @@ def main():
             if dashboard:
                 dashboard.push_event("SYSTEM", "Studio mode — use UFactory Studio UI")
             while ctrl.running:
+                if _go_home_event.is_set():
+                    _go_home_event.clear()
+                    print("[STUDIO] GO HOME — Initial Position", flush=True)
+                    ctrl.go_home(speed=30)
+                    if dashboard:
+                        dashboard.push_event("SYSTEM", "Reached Initial Position")
                 time.sleep(0.5)
             raise KeyboardInterrupt  # jump to finally block for cleanup
 
@@ -586,6 +597,19 @@ def main():
 
         servo_lost_logged = False
         while ctrl.running:
+            # Highest priority: go home (Initial Position)
+            if _go_home_event.is_set():
+                _go_home_event.clear()
+                print("[MAIN] GO HOME — overriding all motion", flush=True)
+                ctrl.go_home(speed=30)
+                if dashboard:
+                    dashboard.push_event("SYSTEM", "Reached Initial Position")
+                    telemetry = ctrl.get_telemetry()
+                    if telemetry:
+                        dashboard.push_arm_telemetry(telemetry)
+                servo_lost_logged = False
+                continue
+
             if ctrl.arm.has_error or ctrl.arm.state >= 4:
                 time.sleep(0.1)
                 servo_lost_logged = False

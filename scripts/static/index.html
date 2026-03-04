@@ -82,6 +82,13 @@
   .btn:hover { border-color: var(--accent); }
   .btn.pause { border-color: var(--orange); color: var(--orange); }
   .btn.resume { border-color: var(--green); color: var(--green); }
+  .btn.go-home {
+    border-color: var(--red);
+    color: var(--red);
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .btn.go-home:hover { background: #f8514926; }
   .btn.input-mode { font-size: 12px; padding: 3px 10px; }
   .btn.input-mode.active { border-color: var(--accent); background: #388bfd26; color: var(--accent); }
 
@@ -497,6 +504,7 @@
     <h1>UF850 Dashboard</h1>
     <span class="status-badge connecting" id="statusBadge">CONNECTING</span>
     <div class="header-right">
+      <button class="btn go-home" onclick="sendCommand('go_home')" title="Move all joints to 0° (highest priority)">Initial Position</button>
       <button class="btn input-mode" id="btnVLM" onclick="switchInputMode('vlm')">VLM</button>
       <button class="btn input-mode active" id="btnHandTrack" onclick="switchInputMode('hand_tracking')">Hand Track</button>
       <span class="vlm-badge vlm-only" id="vlmBadge">VLM: --</span>
