@@ -200,8 +200,8 @@ class ParametricMotionGenerator:
         self._hand_lost_time = None
 
         cfg = self.cfg
-        # Amplify horizontal movement: center 50% of frame covers full Y range
-        hand_x_scaled = _clamp(0.5 + (hand_x - 0.5) * 2.0, 0.0, 1.0)
+        # Amplify horizontal movement: center 80% of frame covers full Y range
+        hand_x_scaled = _clamp(0.5 + (hand_x - 0.5) * 1.25, 0.0, 1.0)
         # Video is mirrored, so hand_x=1 (user's right) -> +Y (viewer's right)
         arm_y = _lerp(cfg.bounds_y[0], cfg.bounds_y[1], hand_x_scaled)
         arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
