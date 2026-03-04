@@ -171,10 +171,11 @@ class ArmController:
     def go_home(self, speed=30):
         """Move all joints to zero position (Initial Position).
 
-        Exits servo mode, moves via move_gohome (blocking), then re-enables
-        servo mode. Safe to call from any state.
+        Exits servo mode, moves via move_gohome (blocking).
+        Does NOT re-enable servo — the main loop's try_reenable_servo()
+        will handle recovery safely (position-mode move to center first,
+        avoiding singularity issues near the zero-joint configuration).
         """
-        was_servo = self._servo_mode
         self._servo_mode = False
 
         # Switch to position mode
@@ -186,11 +187,6 @@ class ArmController:
         print("[ARM] Moving to Initial Position (all joints → 0°)...", flush=True)
         self.arm.move_gohome(speed=speed, wait=True)
         print("[ARM] Reached Initial Position.", flush=True)
-
-        # Re-enable servo mode if it was active
-        if was_servo:
-            time.sleep(0.3)
-            self.enable_servo()
 
     def flush_queue(self):
         if self._servo_mode:
