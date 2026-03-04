@@ -43,6 +43,11 @@ class ParametricMotionGenerator:
 
     TRANSITION_BOOST_DURATION = 0.8  # seconds of high speed after mode switch
 
+    # EMA smoothing factor for hand tracking input (0 = no smoothing, 1 = frozen).
+    # Higher values = smoother but laggier. 0.85 feels responsive yet stable.
+    HAND_SMOOTH = 0.85
+    HAND_RPY_SMOOTH = 0.88  # RPY needs heavier smoothing (amplified noise)
+
     def __init__(self, persona_config):
         self.cfg = persona_config
         self._mode = "CALM"
@@ -50,6 +55,8 @@ class ParametricMotionGenerator:
         self._debug = {}
         self._hand_target = None  # (x, y, z) in arm mm, set by hand tracking
         self._hand_rpy_target = None  # (pitch, yaw) from second hand, or None
+        self._hand_smooth = None  # EMA-smoothed (x, y, z)
+        self._hand_rpy_smooth = None  # EMA-smoothed (pitch, yaw)
 
     def set_mode(self, mode_name):
         """Switch to a new mode. Resets transition timer for speed boost."""
@@ -103,9 +110,12 @@ class ParametricMotionGenerator:
           hand_x (horizontal, mirrored) -> arm Y (direct: user right = viewer right = +Y)
           hand_y (vertical, 0=top) -> arm Z (inverted: top = high Z)
           arm X: fixed at comfortable forward reach
+
+        Raw position is EMA-smoothed to eliminate MediaPipe jitter.
         """
         if hand_x is None:
             self._hand_target = None
+            self._hand_smooth = None
             return
         cfg = self.cfg
         # Amplify horizontal movement: center 50% of frame covers full Y range
@@ -114,7 +124,19 @@ class ParametricMotionGenerator:
         arm_y = _lerp(cfg.bounds_y[0], cfg.bounds_y[1], hand_x_scaled)
         arm_z = _lerp(cfg.bounds_z[1], cfg.bounds_z[0], hand_y)
         arm_x = _lerp(cfg.bounds_x[0], cfg.bounds_x[1], 0.7)
-        self._hand_target = (arm_x, arm_y, arm_z)
+        raw = (arm_x, arm_y, arm_z)
+
+        # EMA low-pass filter: smoothed = α * old + (1-α) * new
+        if self._hand_smooth is None:
+            self._hand_smooth = raw
+        else:
+            a = self.HAND_SMOOTH
+            self._hand_smooth = (
+                a * self._hand_smooth[0] + (1 - a) * raw[0],
+                a * self._hand_smooth[1] + (1 - a) * raw[1],
+                a * self._hand_smooth[2] + (1 - a) * raw[2],
+            )
+        self._hand_target = self._hand_smooth
 
     def set_hand_rpy_input(self, hand_x, hand_y):
         """Set RPY control from second hand (normalised 0-1 coords).
@@ -125,12 +147,24 @@ class ParametricMotionGenerator:
           hand_y (vertical, 0=top) -> pitch: center(0.5) = 0°, range ±50°
 
         Pass None to clear (reverts to single-hand boundary lean).
+        Raw value is EMA-smoothed to eliminate jitter.
         """
         if hand_x is None:
             self._hand_rpy_target = None
+            self._hand_rpy_smooth = None
             return
         pitch = -(hand_y - 0.5) * 2.0 * 50.0      # ±50°, inverted (top=positive)
-        self._hand_rpy_target = (pitch, 0)
+        raw = (pitch, 0)
+
+        if self._hand_rpy_smooth is None:
+            self._hand_rpy_smooth = raw
+        else:
+            a = self.HAND_RPY_SMOOTH
+            self._hand_rpy_smooth = (
+                a * self._hand_rpy_smooth[0] + (1 - a) * raw[0],
+                a * self._hand_rpy_smooth[1] + (1 - a) * raw[1],
+            )
+        self._hand_rpy_target = self._hand_rpy_smooth
 
     # ------------------------------------------------------------------
     # Mode-specific motion generators
