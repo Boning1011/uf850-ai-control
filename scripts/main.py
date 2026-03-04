@@ -652,7 +652,12 @@ def main():
                 x, y = x * cos_t - y * sin_t, x * sin_t + y * cos_t
                 yaw = yaw + j1_off
 
-            ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, yaw=yaw, dt=DT)
+            # Dead-zone only for TRACK mode (noisy sensor input).
+            # Math-generated modes (CALM etc.) are already smooth — dead-zone
+            # would cause stutter since their per-frame steps are < 2mm.
+            dz = 2.0 if motion_gen.current_mode == "TRACK" else 0.0
+            ret = ctrl.send_servo(x, y, z, speed=speed, pitch=pitch, yaw=yaw,
+                                  dt=DT, deadzone=dz)
             if ret == -2:
                 time.sleep(0.2)
                 continue

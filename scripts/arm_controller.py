@@ -266,7 +266,8 @@ class ArmController:
             cx, cy, cz = self.center
             self._last_servo_pos = [cx, cy, cz, r, p, w]
 
-    def send_servo(self, x, y, z, speed=None, pitch=None, yaw=None, dt=0.04):
+    def send_servo(self, x, y, z, speed=None, pitch=None, yaw=None, dt=0.04,
+                   deadzone=0.0):
         """Send velocity-clamped servo command.
 
         Speed is used for velocity clamping: max_mm_per_frame = speed * dt.
@@ -279,6 +280,11 @@ class ArmController:
             pitch: tool pitch in degrees (default: from self.rpy[1])
             yaw: tool yaw in degrees (default: from self.rpy[2])
             dt: control loop timestep in seconds
+            deadzone: position dead-zone in mm (0 = disabled). When the
+                Euclidean distance from last sent position is below this
+                threshold, the last position is re-sent instead. Use for
+                noisy input (hand tracking) — do NOT use for smooth
+                math-generated motion (CALM/EXCITED etc.) as it causes stutter.
         Returns:
             SDK return code, -2 if arm not in servo mode
         """
@@ -309,14 +315,15 @@ class ArmController:
         clamped = self._velocity_clamp(self._last_servo_pos, target, max_mm, max_deg)
 
         # Dead-zone: if position barely changed, hold last position to suppress
-        # micro-oscillation from sensor noise. Re-send last pos (don't skip —
-        # servo mode requires continuous commands at expected rate).
-        pos_delta = math.sqrt(sum((clamped[i] - self._last_servo_pos[i]) ** 2
-                                  for i in range(3)))
-        rot_delta = max(abs(clamped[i] - self._last_servo_pos[i])
-                        for i in range(3, 6))
-        if pos_delta < 2.0 and rot_delta < 0.5:
-            clamped = list(self._last_servo_pos)
+        # micro-oscillation from sensor noise. Only active when deadzone > 0
+        # (caller enables it for noisy input like hand tracking).
+        if deadzone > 0:
+            pos_delta = math.sqrt(sum((clamped[i] - self._last_servo_pos[i]) ** 2
+                                      for i in range(3)))
+            rot_delta = max(abs(clamped[i] - self._last_servo_pos[i])
+                            for i in range(3, 6))
+            if pos_delta < deadzone and rot_delta < 0.5:
+                clamped = list(self._last_servo_pos)
 
         ret = self.arm.set_servo_cartesian(clamped, is_radian=False)
         if ret == 0:
