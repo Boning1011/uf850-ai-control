@@ -11,6 +11,7 @@ import sys
 import time
 import threading
 from xarm.wrapper import XArmAPI
+from motion_gen import OneEuroFilter
 
 
 # ---------- single-instance lock ----------
@@ -81,6 +82,15 @@ class ArmController:
         self.running = True
         self._servo_mode = False
         self._last_servo_pos = None  # [x, y, z, roll, pitch, yaw]
+
+        # Final-stage 1€ filters on servo output (6 axes: X Y Z R P W).
+        # Smooths ALL motion — math-generated and sensor-driven alike.
+        # min_cutoff=3.0 Hz: transparent for slow math (CALM 0.15 Hz, PLAYFUL 1.5 Hz)
+        # but attenuates timing jitter and quantization artifacts at 25 Hz.
+        self._servo_filters = [
+            OneEuroFilter(min_cutoff=3.0, beta=0.01, d_cutoff=1.0)
+            for _ in range(6)
+        ]
 
     def connect(self):
         self.arm = XArmAPI(self.ip, is_radian=False)
@@ -257,7 +267,11 @@ class ArmController:
         return self.enable_servo()
 
     def _seed_servo_pos(self):
-        """Read current arm position as servo starting point."""
+        """Read current arm position as servo starting point.
+
+        Also resets and seeds the servo-level 1€ filters so they start
+        from the actual arm position (no lag on first command).
+        """
         code, pos = self.arm.get_position()
         if code == 0:
             self._last_servo_pos = list(pos[:6])
@@ -265,6 +279,11 @@ class ArmController:
             r, p, w = self.rpy
             cx, cy, cz = self.center
             self._last_servo_pos = [cx, cy, cz, r, p, w]
+        # Seed filters with current position (reset + prime)
+        t_now = time.monotonic()
+        for i in range(6):
+            self._servo_filters[i].reset()
+            self._servo_filters[i](self._last_servo_pos[i], t_now)
 
     def send_servo(self, x, y, z, speed=None, pitch=None, yaw=None, dt=0.04,
                    deadzone=0.0):
@@ -306,6 +325,12 @@ class ArmController:
 
         if self._last_servo_pos is None:
             self._seed_servo_pos()
+
+        # Final-stage 1€ filter: smooth the target trajectory for ALL modes.
+        # Transparent for slow math motion, catches timing jitter and residual noise.
+        t_now = time.monotonic()
+        for i in range(6):
+            target[i] = self._servo_filters[i](target[i], t_now)
 
         # Velocity limits from speed
         spd = speed if speed is not None else self.speed
