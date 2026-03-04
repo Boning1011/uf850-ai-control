@@ -67,7 +67,17 @@ The Python control script sends current state, tool position, orientation, and a
 1. ✅ **~1 day** — Wire VLM perception (Gemini 2.5 Flash) to procedural arm control as PoC
 2. ✅ **~1 day** — Replace CSV playback with procedural Cartesian control; servo mode; error recovery; safety layers
 3. ✅ **~1 week** — Polish motion personalities (7 modes), web dashboard, MediaPipe hand tracking as default mode, two-hand control, tab UI
-4. **Ongoing** — TouchDesigner OSC integration, tune motion on real hardware, optional: imitation learning (LeRobot) for organic gestures
+4. ✅ **2026-03-04** — First real hardware testing. Identified and fixed motion jitter (EMA smoothing on hand tracking input).
+5. **Ongoing** — TouchDesigner OSC integration, tune motion on real hardware, optional: imitation learning (LeRobot) for organic gestures
+
+## Real Hardware Testing Notes (since 2026-03-04)
+
+Prior to 2026-03-04, all development and testing was done exclusively on the Docker simulator. Real hardware introduces considerations that the simulator does not surface:
+
+- **Physical vibration & inertia** — Jitter that is invisible in simulation causes visible shaking on real hardware (table vibration, mechanical resonance). All motion targets must be smoothed; raw sensor input should never drive the arm directly.
+- **Speed & acceleration tuning** — Simulator has no mass/friction; real arm dynamics require conservative speed limits and acceleration profiles tuned on actual hardware.
+- **Safety margins** — Real hardware testing means physical consequences. Always verify on simulator first, then test on real arm with reduced speed.
+- **Sensor noise** — Camera/MediaPipe detection noise is amplified through coordinate mapping. EMA or similar low-pass filtering is mandatory on all real-time sensor inputs.
 
 ## Real-Time Tracking Mode (Implemented — Default)
 
