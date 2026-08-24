@@ -1,6 +1,8 @@
 # UFactory 850 AI-Driven Interactive Control
 
-New-media art installation: a 6-axis robotic arm responds to audience behavior in real time.
+UF850 AI Control is an open-source human–robot interaction prototype created and maintained by [Bo-Ning Li](https://boningli.com): a six-axis robotic arm responds to audience behavior through vision-language understanding or real-time hand tracking.
+
+**Project page:** [boningli.com/rnd/uf850-ai-control](https://boningli.com/rnd/uf850-ai-control)
 
 See [doc/Design Brief.md](doc/Design%20Brief.md) for architecture details, [doc/Devlog.md](doc/Devlog.md) for development history.
 
