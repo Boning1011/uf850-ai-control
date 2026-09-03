@@ -8,6 +8,41 @@ See [doc/Design Brief.md](doc/Design%20Brief.md) for architecture details, [doc/
 
 ---
 
+## Demos
+
+The interface pairs the camera input with the simulated UF850, making the relationship between a gesture, its interpretation, and the resulting motion visible in one view.
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/media/demos/hand-position-control.gif" alt="Right-hand position controlling the simulated UF850 in real time" width="100%">
+      <br><strong>Direct position control</strong><br>
+      <sub>MediaPipe maps the right hand to the arm's X, Y, and Z position.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/media/demos/two-hand-control.gif" alt="Two hands controlling position and pitch of the simulated UF850" width="100%">
+      <br><strong>Two-hand role split</strong><br>
+      <sub>The right hand controls position while the left hand controls pitch.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/media/demos/vlm-wave-response.gif" alt="Gemini interpreting an open-palm gesture and updating the robot behavior" width="100%">
+      <br><strong>Gesture-aware VLM</strong><br>
+      <sub>Gemini reads an open-palm gesture before updating the behavior parameters.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/media/demos/vlm-heart-response.gif" alt="Heart gesture triggering the PLAYFUL robot persona" width="100%">
+      <br><strong>Semantic trigger</strong><br>
+      <sub>A heart gesture switches the motion system into its PLAYFUL persona.</sub>
+    </td>
+  </tr>
+</table>
+
+Full sessions: [hand tracking (58 s, MP4)](docs/media/videos/hand-tracking.mp4) · [VLM interaction (55 s, MP4)](docs/media/videos/vlm-interaction.mp4)
+
+---
+
 ## Quick Start
 
 ### 1. Environment Setup (first time only)
