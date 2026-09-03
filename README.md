@@ -1,10 +1,14 @@
 # UFactory 850 AI-Driven Interactive Control
 
-UF850 AI Control is an open-source human–robot interaction prototype created and maintained by [Bo-Ning Li](https://boningli.com): a six-axis robotic arm responds to audience behavior through vision-language understanding or real-time hand tracking.
+UF850 AI Control is an open-source, two-week proof of concept created and maintained by [Bo-Ning Li](https://boningli.com). It explores how a six-axis robotic arm can respond to people through live visual input rather than a library of pre-authored motion.
+
+Instead of rigging and animating the arm offline, the system sends Cartesian targets directly to the UFactory controller and lets the arm's firmware solve the inverse kinematics. A single webcam drives two complementary interaction modes. Gemini interprets the scene and semantic gestures through a vision-language pipeline, while MediaPipe turns hand movement into direct position and pitch control. Both modes feed the same real-time motion, safety, and recovery system.
+
+The project was developed through fast, small AI-assisted iterations, first with UFactory's simulator and then on the physical UF850. Real-hardware testing exposed tracking jitter and mechanical vibration that were invisible in simulation, leading to adaptive filtering, dead zones, speed limits, and safer boundary behavior. The result is intentionally a proof of concept, built to test a responsive perception-to-motion workflow rather than a production-ready installation.
 
 **Project page:** [boningli.com/rnd/uf850-ai-control](https://boningli.com/rnd/uf850-ai-control)
 
-See [doc/Design Brief.md](doc/Design%20Brief.md) for architecture details, [doc/Devlog.md](doc/Devlog.md) for development history.
+Read [One Webcam, One Arm](https://boningli.com/blog/uf850-ai-robotic-arm) for the full project notes. See [doc/Design Brief.md](doc/Design%20Brief.md) for architecture details and [doc/Devlog.md](doc/Devlog.md) for development history.
 
 ---
 
